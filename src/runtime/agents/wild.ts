@@ -1,0 +1,133 @@
+// ai_team/src/runtime/agents/wild.ts
+
+import type { TaskInput, AgentOutput } from "../types.js";
+import { openaiText } from "../model/openai.js";
+
+function extractJson(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("```")) {
+    return trimmed.replace(/^```[a-zA-Z]*\n?/, "").replace(/```$/, "").trim();
+  }
+  return trimmed;
+}
+
+function pickWildModel(task: TaskInput): string {
+  const rt: any = (task as any)?.inputs?.runtime;
+  const lanes: any[] = Array.isArray(rt?.lanes) ? rt.lanes : [];
+  const lane = lanes.find((l) => String(l?.id).toUpperCase() === "WILD");
+  if (lane?.model) return String(lane.model);
+
+  if (process.env.WILD_MODEL && process.env.WILD_MODEL.trim()) return process.env.WILD_MODEL.trim();
+  return "gpt-4o-mini";
+}
+
+function asStringContent(x: any): string {
+  if (typeof x === "string") return x;
+  try {
+    return JSON.stringify(x, null, 2);
+  } catch {
+    return String(x);
+  }
+}
+
+function normalizeAgentOutput(parsed: any): AgentOutput {
+  const out: any = parsed && typeof parsed === "object" ? parsed : {};
+
+  // Force fixed lane identity
+  out.agent = "WILD";
+  out.type = "REFRAME";
+
+  // Normalize arrays
+  out.claims = Array.isArray(out.claims) ? out.claims : [];
+  out.steps = Array.isArray(out.steps) ? out.steps : [];
+  out.assumptions = Array.isArray(out.assumptions) ? out.assumptions : [];
+  out.artifacts = Array.isArray(out.artifacts) ? out.artifacts : [];
+
+  // Ensure claim fields are present + dependsOn is array
+  out.claims = out.claims.map((c: any, i: number) => ({
+    id: typeof c?.id === "string" ? c.id : `w_claim_${i + 1}`,
+    text: typeof c?.text === "string" ? c.text : asStringContent(c?.text ?? c),
+    risk: c?.risk === "high" || c?.risk === "med" || c?.risk === "low" ? c.risk : "low",
+    dependsOn: Array.isArray(c?.dependsOn) ? c.dependsOn.map(String) : [],
+  }));
+
+  // Normalize steps
+  out.steps = out.steps.map((s: any, i: number) => ({
+    id: typeof s?.id === "string" ? s.id : `w_s${i + 1}`,
+    action: typeof s?.action === "string" ? s.action : asStringContent(s?.action ?? s),
+    pre: Array.isArray(s?.pre) ? s.pre.map(String) : [],
+    post: Array.isArray(s?.post) ? s.post.map(String) : [],
+    evidenceNeeded: Array.isArray(s?.evidenceNeeded) ? s.evidenceNeeded.map(String) : [],
+  }));
+
+  // Normalize assumptions
+  out.assumptions = out.assumptions.map((a: any, i: number) => ({
+    id: typeof a?.id === "string" ? a.id : `w_a${i + 1}`,
+    text: typeof a?.text === "string" ? a.text : asStringContent(a?.text ?? a),
+    isVerified: Boolean(a?.isVerified),
+  }));
+
+  // Normalize artifacts, enforce string content
+  out.artifacts = out.artifacts.map((a: any) => ({
+    kind:
+      a?.kind === "diff" || a?.kind === "file" || a?.kind === "command" || a?.kind === "note"
+        ? a.kind
+        : "note",
+    content: asStringContent(a?.content ?? ""),
+  }));
+
+  // Guarantee at least one note artifact
+  if (!out.artifacts.some((a: any) => a.kind === "note" && a.content.trim())) {
+    out.artifacts.push({
+      kind: "note",
+      content: "Wild reframe produced no note; please retry.",
+    });
+  }
+
+  return out as AgentOutput;
+}
+
+export async function wild_reframe(task: TaskInput): Promise<AgentOutput> {
+  const model = pickWildModel(task);
+
+  const prompt = `
+You are WILD, a creative reframer lane in a deterministic multi-agent runtime.
+
+Return ONLY valid JSON with this shape:
+{
+  "agent":"WILD",
+  "type":"REFRAME",
+  "claims":[{"id":"w0","text":"...","risk":"low","dependsOn":[]}],
+  "steps":[{"id":"w_s1","action":"...","pre":[],"post":[],"evidenceNeeded":[]}],
+  "assumptions":[{"id":"a1","text":"...","isVerified":false}],
+  "artifacts":[{"kind":"note","content":"..."}]
+}
+
+Rules:
+- dependsOn MUST be an array (use [] if none)
+- artifacts[].content MUST be a string
+- Make the reframe about the user's objective, not UI.
+
+Objective: ${task.objective}
+Constraints: ${JSON.stringify(task.constraints)}
+Notes: ${String((task as any)?.inputs?.notes ?? "")}
+`.trim();
+
+  const raw = await openaiText({
+    model,
+    input: prompt,
+    temperature: 0.7,
+    max_output_tokens: 1400,
+  });
+
+  const jsonText = extractJson(raw);
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch {
+    throw new Error(`WILD returned non-JSON. Raw:\n${raw}`);
+  }
+
+  return normalizeAgentOutput(parsed);
+}
