@@ -4,7 +4,7 @@ export type UUID = string;
 export const uuid = (): UUID =>
   `id_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
-export type AgentName = "XO-A" | "XO-B" | "WILD" | "GEMINI";
+export type AgentName = "AI1" | "AI2" | "AI3" | "AI4";
 export type AgentType = "PLAN" | "CRITIQUE" | "REFRAME" | "REVISION";
 
 export type ValidationStatus = "PASS" | "FAIL";

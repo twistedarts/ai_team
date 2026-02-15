@@ -1,16 +1,11 @@
 // ai_team/web/src/components/RunView.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import {
-  commitDecision,
-  getPending,
-  loadRunTrace,
-  type Decision,
-  type PendingEnvelope,
-} from "../api";
+import { commitDecision, getPending, loadRunTrace, type Decision, type PendingEnvelope } from "../api";
 import JsonPanel from "./JsonPanel";
 
 const TRACE_POLL_MS = 900;
 const TIMELINE_HEIGHT = 420;
+const RUNNING_STALE_MS = 12_000; // if "running" but no updates for 12s, treat as stale
 
 function pickNote(o: any): string {
   const note = (o?.artifacts || []).find((a: any) => a?.kind === "note")?.content;
@@ -24,47 +19,49 @@ function formatStepsAll(steps: any[]): string {
     .join("\n");
 }
 
-function findBestXO(trace: any) {
+function findBestAI1(trace: any) {
   const outs = Array.isArray(trace?.outputs) ? trace.outputs : [];
   for (let i = outs.length - 1; i >= 0; i--) {
     const o = outs[i];
-    if (o?.agent === "XO-A" && o?.type === "REVISION") return o;
+    if (o?.agent === "AI1" && o?.type === "REVISION") return o;
   }
   for (let i = outs.length - 1; i >= 0; i--) {
     const o = outs[i];
-    if (o?.agent === "XO-A" && o?.type === "PLAN") return o;
+    if (o?.agent === "AI1" && o?.type === "PLAN") return o;
+  }
+  return null;
+}
+
+function findLastLane(trace: any, laneId: string) {
+  const outs = Array.isArray(trace?.outputs) ? trace.outputs : [];
+  for (let i = outs.length - 1; i >= 0; i--) {
+    const o = outs[i];
+    if (String(o?.agent ?? "").toUpperCase() === laneId.toUpperCase()) return o;
   }
   return null;
 }
 
 function buildFinalHuman(trace: any): string {
-  const outs = Array.isArray(trace?.outputs) ? trace.outputs : [];
-  const xo = findBestXO(trace);
-  const xoNote = xo ? pickNote(xo).trim() : "";
-  const xoSteps = xo ? formatStepsAll(xo?.steps ?? []) : "";
+  const ai1 = findBestAI1(trace);
+  const ai1Note = ai1 ? pickNote(ai1).trim() : "";
+  const ai1Steps = ai1 ? formatStepsAll(ai1?.steps ?? []) : "";
 
-  const gemini = (() => {
-    for (let i = outs.length - 1; i >= 0; i--) {
-      const o = outs[i];
-      if (o?.agent === "GEMINI") return o;
-    }
-    return null;
-  })();
-  const gNote = gemini ? pickNote(gemini).trim() : "";
+  const ai4 = findLastLane(trace, "AI4");
+  const ai4Note = ai4 ? pickNote(ai4).trim() : "";
 
   const parts: string[] = [];
-  if (xoNote) parts.push(xoNote);
-  if (!xoNote && gNote) parts.push(gNote);
+  if (ai1Note) parts.push(ai1Note);
+  if (!ai1Note && ai4Note) parts.push(ai4Note);
+  if (ai1Steps) parts.push(`\n\nSteps:\n${ai1Steps}`);
 
-  if (gNote && xoNote) {
-    const xoLower = xoNote.toLowerCase();
-    const gLower = gNote.toLowerCase();
-    const missing = gLower.length >= 120 && !xoLower.includes(gLower.slice(0, 40));
-    if (missing) parts.push(`\n\nAnswer (Gemini):\n${gNote}`);
-  }
-
-  if (xoSteps) parts.push(`\n\nSteps:\n${xoSteps}`);
   return parts.join("").trim();
+}
+
+function parseUpdatedAt(trace: any): number | null {
+  const s = trace?.updatedAt ?? trace?.trace?.updatedAt ?? null;
+  if (!s) return null;
+  const t = Date.parse(String(s));
+  return Number.isFinite(t) ? t : null;
 }
 
 export default function RunView({ runId }: { runId: string }) {
@@ -81,7 +78,6 @@ export default function RunView({ runId }: { runId: string }) {
   const pollRef = useRef<number | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
-  const timelineBoxRef = useRef<HTMLDivElement | null>(null);
   const timelineEndRef = useRef<HTMLDivElement | null>(null);
   const lastOutputsLenRef = useRef(0);
 
@@ -125,8 +121,6 @@ export default function RunView({ runId }: { runId: string }) {
 
   function startSSE() {
     stopSSE();
-
-    // Vite proxy will forward /api/* to your backend
     const es = new EventSource(`/api/runs/${encodeURIComponent(runId)}/events`);
     esRef.current = es;
 
@@ -136,8 +130,6 @@ export default function RunView({ runId }: { runId: string }) {
         if (data?.trace !== undefined) setTrace(data.trace);
         if (data?.pending !== undefined) setPending(data.pending);
         setErr(null);
-
-        // After state updates, scroll
         requestAnimationFrame(() => scrollTimelineToBottom());
       } catch (e: any) {
         setErr(e?.message ?? String(e));
@@ -145,7 +137,6 @@ export default function RunView({ runId }: { runId: string }) {
     });
 
     es.addEventListener("error", () => {
-      // If SSE breaks (proxy, backend down, etc.), fall back to polling.
       stopSSE();
       startPollingFallback();
     });
@@ -159,7 +150,6 @@ export default function RunView({ runId }: { runId: string }) {
   }
 
   useEffect(() => {
-    // reset
     setTrace(null);
     setPending(null);
     setRedirectObjective("");
@@ -170,8 +160,6 @@ export default function RunView({ runId }: { runId: string }) {
 
     void refreshTraceOnce();
     void refreshPendingOnce();
-
-    // Prefer SSE (real-time), fallback to polling if SSE errors.
     startSSE();
 
     return () => {
@@ -182,11 +170,15 @@ export default function RunView({ runId }: { runId: string }) {
   }, [runId]);
 
   const outputs = Array.isArray(trace?.outputs) ? trace.outputs : [];
-  const status = String(trace?.status ?? "unknown").toLowerCase();
-  const isRunning = status === "running";
-  const isTerminal = status === "done" || status === "failed";
+  const rawStatus = String(trace?.status ?? "unknown").toLowerCase();
 
-  // auto-follow when outputs length increases
+  const updatedAtMs = parseUpdatedAt(trace);
+  const ageMs = updatedAtMs ? Date.now() - updatedAtMs : null;
+
+  const isTerminal = rawStatus === "done" || rawStatus === "failed";
+  const isRunningFresh = rawStatus === "running" && !isTerminal && (ageMs === null || ageMs < RUNNING_STALE_MS);
+  const isRunningStale = rawStatus === "running" && !isTerminal && ageMs !== null && ageMs >= RUNNING_STALE_MS;
+
   useEffect(() => {
     const len = outputs.length;
     if (len > lastOutputsLenRef.current) {
@@ -204,7 +196,6 @@ export default function RunView({ runId }: { runId: string }) {
   const committed = Boolean(humanDecision);
   const approved = humanDecision === "approve";
 
-  // Final output should remain blank until commit; after approve open it and hide gate
   useEffect(() => {
     if (approved) {
       setFinalOpen(true);
@@ -220,9 +211,9 @@ export default function RunView({ runId }: { runId: string }) {
     const fromReport = String((report as any)?.proposedOutput ?? "").trim();
     if (fromReport) return fromReport;
 
-    const xo = findBestXO(trace);
-    const note = xo ? pickNote(xo).trim() : "";
-    const steps = xo ? formatStepsAll(xo?.steps ?? []) : "";
+    const ai1 = findBestAI1(trace);
+    const note = ai1 ? pickNote(ai1).trim() : "";
+    const steps = ai1 ? formatStepsAll(ai1?.steps ?? []) : "";
     const bits: string[] = [];
     if (note) bits.push(note);
     if (steps) bits.push(`\n\nSteps:\n${steps}`);
@@ -236,7 +227,6 @@ export default function RunView({ runId }: { runId: string }) {
     setErr(null);
     try {
       await commitDecision(runId, decision, redirectObjective.trim());
-      // SSE should update automatically; but refresh once for safety
       await refreshPendingOnce();
       await refreshTraceOnce();
     } catch (e: any) {
@@ -253,6 +243,9 @@ export default function RunView({ runId }: { runId: string }) {
           <div>
             <h2>Run</h2>
             <div className="small">{runId}</div>
+            <div className="small">
+              {updatedAtMs ? `updated: ${new Date(updatedAtMs).toLocaleString()}` : "updated: (unknown)"}
+            </div>
           </div>
 
           <div style={{ display: "flex", gap: 8 }}>
@@ -269,8 +262,9 @@ export default function RunView({ runId }: { runId: string }) {
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <span className="badge">
-            status: {status}
-            {isRunning ? <span className="spinner" /> : null}
+            status: {rawStatus}
+            {isRunningFresh ? <span className="spinner" /> : null}
+            {isRunningStale ? <span style={{ marginLeft: 8, opacity: 0.85 }}>(stale)</span> : null}
           </span>
           <span className="badge">gate: {gateStatus}</span>
           <span className="badge">outputs: {outputs.length}</span>
@@ -291,13 +285,8 @@ export default function RunView({ runId }: { runId: string }) {
         )}
       </div>
 
-      {/* FINAL: blank until commit; only show after APPROVE */}
       {approved && finalText ? (
-        <details
-          className="card"
-          open={finalOpen}
-          onToggle={(e) => setFinalOpen((e.target as HTMLDetailsElement).open)}
-        >
+        <details className="card" open={finalOpen} onToggle={(e) => setFinalOpen((e.target as HTMLDetailsElement).open)}>
           <summary className="small" style={{ cursor: "pointer" }}>
             Final output (approved)
           </summary>
@@ -308,7 +297,6 @@ export default function RunView({ runId }: { runId: string }) {
         </details>
       ) : null}
 
-      {/* COMMIT GATE: show proposal; collapses/disappears after commit */}
       {showCommitGate && canCommit && !committed ? (
         <div className="card">
           <h3>Commit gate</h3>
@@ -366,21 +354,13 @@ export default function RunView({ runId }: { runId: string }) {
         </div>
       ) : null}
 
-      {/* Agent timeline: scrollable + auto-follow */}
       <details className="card" open>
         <summary className="small" style={{ cursor: "pointer" }}>
           Agent timeline
         </summary>
         <div style={{ height: 12 }} />
 
-        <div
-          ref={timelineBoxRef}
-          style={{
-            maxHeight: TIMELINE_HEIGHT,
-            overflowY: "auto",
-            paddingRight: 6,
-          }}
-        >
+        <div style={{ maxHeight: TIMELINE_HEIGHT, overflowY: "auto", paddingRight: 6 }}>
           {outputs.length === 0 ? (
             <div className="small">(no outputs yet)</div>
           ) : (
@@ -391,7 +371,7 @@ export default function RunView({ runId }: { runId: string }) {
                 return (
                   <div key={`${idx}`} className="item" style={{ cursor: "default" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                      <div style={{ fontWeight: 500 }}>{o?.agent ?? "?"}</div>
+                      <div style={{ fontWeight: 600 }}>{o?.agent ?? "?"}</div>
                       <div className="small">{o?.type ?? ""}</div>
                     </div>
 
@@ -419,12 +399,10 @@ export default function RunView({ runId }: { runId: string }) {
             </div>
           )}
 
-          {/* sentinel for auto-follow */}
           <div ref={timelineEndRef} />
         </div>
       </details>
 
-      {/* Dev-only JSON */}
       <details className="card">
         <summary className="small" style={{ cursor: "pointer" }}>
           Dev panels (raw JSON)
@@ -438,7 +416,7 @@ export default function RunView({ runId }: { runId: string }) {
 
       {isTerminal && !committed && !canCommit ? (
         <div className="card">
-          <div className="small">Run finished with no commit gate (status: {status}).</div>
+          <div className="small">Run finished with no commit gate (status: {rawStatus}).</div>
         </div>
       ) : null}
     </div>

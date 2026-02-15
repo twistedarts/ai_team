@@ -1,13 +1,13 @@
-// ai_team/src/runtime/agents/xoA.ts
-import type { AgentOutput, TaskInput } from "../types.js";
-import { openaiJson } from "../model/openai.js";
+// ai_team/src/runtime/agents/AI1.ts
+import type { AgentOutput, TaskInput, ModelSpec } from "../types.js";
+import { modelJson } from "../model/dispatch.js";
 
 const AGENT_OUTPUT_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
   required: ["agent", "type", "claims", "steps", "assumptions", "artifacts"],
   properties: {
-    agent: { type: "string", enum: ["XO-A", "XO-B", "WILD"] },
+    agent: { type: "string", enum: ["AI1", "AI2", "AI3", "AI4"] },
     type: { type: "string", enum: ["PLAN", "CRITIQUE", "REFRAME", "REVISION"] },
 
     claims: {
@@ -78,7 +78,7 @@ function safeStringify(x: unknown): string {
   }
 }
 
-function normalize(out: AgentOutput, agent: "XO-A", type: AgentOutput["type"]): AgentOutput {
+function normalize(out: AgentOutput, agent: "AI1", type: AgentOutput["type"]): AgentOutput {
   out.agent = agent;
   out.type = type;
 
@@ -113,9 +113,9 @@ function normalize(out: AgentOutput, agent: "XO-A", type: AgentOutput["type"]): 
   return out;
 }
 
-export async function xoA_plan(task: TaskInput): Promise<AgentOutput> {
+export async function AI1_plan(task: TaskInput, spec: ModelSpec): Promise<AgentOutput> {
   const input =
-    `ROLE: XO-A\n` +
+    `ROLE: AI Team lane AI1\n` +
     `MODE: deterministic planner\n` +
     `OUTPUT: JSON only. Must match schema strictly.\n\n` +
     `OBJECTIVE:\n${task.objective}\n\n` +
@@ -127,29 +127,26 @@ export async function xoA_plan(task: TaskInput): Promise<AgentOutput> {
     `- claims[].dependsOn must always be present (empty array allowed).\n` +
     `- steps[].action must be complete sentences (do not truncate).\n`;
 
-  const out = await openaiJson<AgentOutput>({
-    model: "gpt-4o-mini",
-    input,
-    schemaName: "xoA_plan",
-    jsonSchema: AGENT_OUTPUT_JSON_SCHEMA,
-    temperature: 0.2,
-    max_output_tokens: 1800,
-  });
-
-  return normalize(out, "XO-A", "PLAN");
+  const out = await modelJson<AgentOutput>(spec, input, "AI1_plan", AGENT_OUTPUT_JSON_SCHEMA);
+  return normalize(out, "AI1", "PLAN");
 }
 
-export async function xoA_revision(task: TaskInput, prior: AgentOutput[], note: string): Promise<AgentOutput> {
+export async function AI1_revision(
+  task: TaskInput,
+  prior: AgentOutput[],
+  note: string,
+  spec: ModelSpec
+): Promise<AgentOutput> {
   const input =
-    `ROLE: XO-A\n` +
+    `ROLE: AI Team lane AI1\n` +
     `MODE: deterministic revision\n` +
     `OUTPUT: JSON only. Must match schema strictly.\n\n` +
     `OBJECTIVE:\n${task.objective}\n\n` +
     `REVISION NOTE:\n${note}\n\n` +
     `PRIOR OUTPUTS (JSON):\n${safeStringify(prior)}\n\n` +
     `REQUIREMENTS:\n` +
-    `- Integrate critique + reframe.\n` +
-    `- If a GEMINI agent output exists, treat its note as a candidate "best answer".\n` +
+    `- Integrate critique + reframes.\n` +
+    `- If another lane produced a strong candidate answer in its note, treat it as a candidate best answer.\n` +
     `  - Promote that content into your own {kind:"note"} unless it is incorrect.\n` +
     `  - If you modify it, keep the meaning but improve clarity.\n` +
     `- artifacts MUST include a {kind:"note"} containing the final human-readable output.\n` +
@@ -158,14 +155,6 @@ export async function xoA_revision(task: TaskInput, prior: AgentOutput[], note: 
     `- steps must be complete and non-truncated; include the full set of steps.\n` +
     `- claims[].dependsOn must always be present (empty array allowed).\n`;
 
-  const out = await openaiJson<AgentOutput>({
-    model: "gpt-4o-mini",
-    input,
-    schemaName: "xoA_revision",
-    jsonSchema: AGENT_OUTPUT_JSON_SCHEMA,
-    temperature: 0.2,
-    max_output_tokens: 2400,
-  });
-
-  return normalize(out, "XO-A", "REVISION");
+  const out = await modelJson<AgentOutput>(spec, input, "AI1_revision", AGENT_OUTPUT_JSON_SCHEMA);
+  return normalize(out, "AI1", "REVISION");
 }

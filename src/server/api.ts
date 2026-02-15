@@ -3,7 +3,6 @@ import "dotenv/config";
 import express, { Request, Response } from "express";
 import cors from "cors";
 
-import { Profiles } from "./profiles.js";
 import { saveTrace, listRuns, loadTrace, traceMeta } from "./runStore.js";
 
 import { Orchestrator } from "../runtime/orchestrator.js";
@@ -53,7 +52,7 @@ app.get("/api/runs/:id/pending", (req: Request, res: Response) => {
 });
 
 /**
- * SSE: snapshot stream. (Your current SSE implementation is fine.)
+ * SSE: snapshot stream.
  */
 app.get("/api/runs/:id/events", (req: Request, res: Response) => {
   const runId = String(req.params.id);
@@ -122,21 +121,36 @@ app.get("/api/runs/:id/events", (req: Request, res: Response) => {
   });
 });
 
+type IncomingRuntime = {
+  lanes?: any[];
+};
+
+type CreateRunBody = {
+  objective?: string;
+  constraints?: Record<string, unknown>;
+  runtime?: IncomingRuntime;
+};
+
 /**
- * Create run
+ * Create run (public taxonomy: AI1..AI4, runtime-selected providers/models per lane)
  */
 app.post("/api/runs", (req: Request, res: Response) => {
   const runId = uuid();
 
-  const objective = String(req.body?.objective ?? "").trim();
+  const body = (req.body ?? {}) as CreateRunBody;
+  const objective = String(body.objective ?? "").trim();
   if (!objective) return res.status(400).json({ error: "objective required" });
 
-  const profileKey = String(req.body?.profile ?? "debug");
-  const profileObj = (Profiles as any)[profileKey] ?? (Profiles as any)["debug"];
-  if (!profileObj) return res.status(400).json({ error: `unknown profile: ${profileKey}` });
+  // Public default constraints (caller may override)
+  const defaultConstraints = {
+    noNetwork: true,
+    mustBeDeterministic: true,
+    maxIterations: 2,
+  };
 
-  const mergedConstraints = { ...(profileObj?.constraints ?? {}), ...(req.body?.constraints ?? {}) };
-  const agentSet = String(req.body?.agentSet ?? "XO_WILD_CRITIC").toUpperCase().trim();
+  const mergedConstraints = { ...defaultConstraints, ...(body.constraints ?? {}) };
+
+  const lanes = Array.isArray(body.runtime?.lanes) ? body.runtime!.lanes : [];
 
   const task = {
     taskId: runId,
@@ -144,31 +158,36 @@ app.post("/api/runs", (req: Request, res: Response) => {
     constraints: mergedConstraints,
     inputs: {
       files: [],
-      notes: `profile=${profileKey} agentSet=${agentSet}`,
-      runtime: { profile: profileKey, agentSet },
+      notes: "",
+      runtime: {
+        lanes,
+      },
     },
   };
 
+  // Initial snapshot
   saveTrace(runId, {
     runId,
     task,
     status: "running",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
   });
 
   (async () => {
     try {
       const orch = new Orchestrator(new CommandValidator());
       const ws = await orch.run(task);
-      saveTrace(runId, { ...ws, runId, task, status: "done", updatedAt: new Date().toISOString() });
+      saveTrace(runId, {
+        ...ws,
+        runId,
+        task,
+        status: "done",
+      });
     } catch (e: any) {
       saveTrace(runId, {
         runId,
         task,
         status: "failed",
         error: e?.stack ?? String(e),
-        updatedAt: new Date().toISOString(),
       });
     }
   })();
@@ -212,31 +231,33 @@ app.post("/api/runs/:id/commit", async (req: Request, res: Response) => {
 
   // 2) If redirect: create a new run immediately and return its id
   if (decision === "redirect") {
-    // inherit runtime hints from existing trace if present
-    let profile = "debug";
-    let agentSet = "XO_WILD_CRITIC";
+    // inherit lanes + constraints from existing trace if present
+    let inheritedLanes: any[] = [];
+    let inheritedConstraints: Record<string, unknown> = {
+      noNetwork: true,
+      mustBeDeterministic: true,
+      maxIterations: 2,
+    };
 
     try {
       const t: any = loadTrace(runId);
-      profile = String(t?.task?.inputs?.runtime?.profile ?? profile);
-      agentSet = String(t?.task?.inputs?.runtime?.agentSet ?? agentSet);
+      const lanes = t?.task?.inputs?.runtime?.lanes;
+      if (Array.isArray(lanes)) inheritedLanes = lanes;
+      const c = t?.task?.constraints;
+      if (c && typeof c === "object") inheritedConstraints = { ...inheritedConstraints, ...c };
     } catch {
       // ignore
     }
 
-    // create new run using the same create logic
     const newRunId = uuid();
-    const profileObj = (Profiles as any)[profile] ?? (Profiles as any)["debug"];
-    const mergedConstraints = { ...(profileObj?.constraints ?? {}) };
-
     const task = {
       taskId: newRunId,
       objective: redirectObjective,
-      constraints: mergedConstraints,
+      constraints: inheritedConstraints,
       inputs: {
         files: [],
-        notes: `profile=${profile} agentSet=${agentSet} (redirected from ${runId})`,
-        runtime: { profile, agentSet },
+        notes: `(redirected from ${runId})`,
+        runtime: { lanes: inheritedLanes },
       },
     };
 
@@ -244,22 +265,24 @@ app.post("/api/runs/:id/commit", async (req: Request, res: Response) => {
       runId: newRunId,
       task,
       status: "running",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
     });
 
     (async () => {
       try {
         const orch = new Orchestrator(new CommandValidator());
         const ws = await orch.run(task);
-        saveTrace(newRunId, { ...ws, runId: newRunId, task, status: "done", updatedAt: new Date().toISOString() });
+        saveTrace(newRunId, {
+          ...ws,
+          runId: newRunId,
+          task,
+          status: "done",
+        });
       } catch (e: any) {
         saveTrace(newRunId, {
           runId: newRunId,
           task,
           status: "failed",
           error: e?.stack ?? String(e),
-          updatedAt: new Date().toISOString(),
         });
       }
     })();

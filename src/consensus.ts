@@ -27,14 +27,14 @@ export function buildConsensus(ws: Workspace): ConsensusReport {
   const validatorStatus: ValidationStatus = ws.validator?.status ?? "FAIL";
 
   // XO-B critique defines objections (best effort)
-  const xoB = ws.outputs.find((o) => o.agent === "XO-B");
+  const AI2 = ws.outputs.find((o) => o.agent === "AI2");
   const dissent: { agent: any; issue: string; severity: ClaimRisk }[] = [];
 
-  if (xoB) {
-    for (const c of xoB.claims) {
+  if (AI2) {
+    for (const c of AI2.claims) {
       // Treat critique claims as issues
       dissent.push({
-        agent: "XO-B",
+        agent: "AI2",
         issue: c.text,
         severity: c.risk
       });

@@ -1,7 +1,6 @@
-// ai_team/src/runtime/agents/wild.ts
-
-import type { TaskInput, AgentOutput } from "../types.js";
-import { openaiText } from "../model/openai.js";
+// ai_team/src/runtime/agents/AI3.ts
+import type { TaskInput, AgentOutput, ModelSpec } from "../types.js";
+import { modelText } from "../model/dispatch.js";
 
 function extractJson(raw: string): string {
   const trimmed = raw.trim();
@@ -9,16 +8,6 @@ function extractJson(raw: string): string {
     return trimmed.replace(/^```[a-zA-Z]*\n?/, "").replace(/```$/, "").trim();
   }
   return trimmed;
-}
-
-function pickWildModel(task: TaskInput): string {
-  const rt: any = (task as any)?.inputs?.runtime;
-  const lanes: any[] = Array.isArray(rt?.lanes) ? rt.lanes : [];
-  const lane = lanes.find((l) => String(l?.id).toUpperCase() === "WILD");
-  if (lane?.model) return String(lane.model);
-
-  if (process.env.WILD_MODEL && process.env.WILD_MODEL.trim()) return process.env.WILD_MODEL.trim();
-  return "gpt-4o-mini";
 }
 
 function asStringContent(x: any): string {
@@ -34,7 +23,7 @@ function normalizeAgentOutput(parsed: any): AgentOutput {
   const out: any = parsed && typeof parsed === "object" ? parsed : {};
 
   // Force fixed lane identity
-  out.agent = "WILD";
+  out.agent = "AI3";
   out.type = "REFRAME";
 
   // Normalize arrays
@@ -45,7 +34,7 @@ function normalizeAgentOutput(parsed: any): AgentOutput {
 
   // Ensure claim fields are present + dependsOn is array
   out.claims = out.claims.map((c: any, i: number) => ({
-    id: typeof c?.id === "string" ? c.id : `w_claim_${i + 1}`,
+    id: typeof c?.id === "string" ? c.id : `ai3_claim_${i + 1}`,
     text: typeof c?.text === "string" ? c.text : asStringContent(c?.text ?? c),
     risk: c?.risk === "high" || c?.risk === "med" || c?.risk === "low" ? c.risk : "low",
     dependsOn: Array.isArray(c?.dependsOn) ? c.dependsOn.map(String) : [],
@@ -53,7 +42,7 @@ function normalizeAgentOutput(parsed: any): AgentOutput {
 
   // Normalize steps
   out.steps = out.steps.map((s: any, i: number) => ({
-    id: typeof s?.id === "string" ? s.id : `w_s${i + 1}`,
+    id: typeof s?.id === "string" ? s.id : `ai3_s${i + 1}`,
     action: typeof s?.action === "string" ? s.action : asStringContent(s?.action ?? s),
     pre: Array.isArray(s?.pre) ? s.pre.map(String) : [],
     post: Array.isArray(s?.post) ? s.post.map(String) : [],
@@ -62,7 +51,7 @@ function normalizeAgentOutput(parsed: any): AgentOutput {
 
   // Normalize assumptions
   out.assumptions = out.assumptions.map((a: any, i: number) => ({
-    id: typeof a?.id === "string" ? a.id : `w_a${i + 1}`,
+    id: typeof a?.id === "string" ? a.id : `ai3_a${i + 1}`,
     text: typeof a?.text === "string" ? a.text : asStringContent(a?.text ?? a),
     isVerified: Boolean(a?.isVerified),
   }));
@@ -77,28 +66,26 @@ function normalizeAgentOutput(parsed: any): AgentOutput {
   }));
 
   // Guarantee at least one note artifact
-  if (!out.artifacts.some((a: any) => a.kind === "note" && a.content.trim())) {
+  if (!out.artifacts.some((a: any) => a.kind === "note" && String(a.content ?? "").trim())) {
     out.artifacts.push({
       kind: "note",
-      content: "Wild reframe produced no note; please retry.",
+      content: "Lane AI3 produced no note; please retry.",
     });
   }
 
   return out as AgentOutput;
 }
 
-export async function wild_reframe(task: TaskInput): Promise<AgentOutput> {
-  const model = pickWildModel(task);
-
+export async function AI3_reframe(task: TaskInput, spec: ModelSpec): Promise<AgentOutput> {
   const prompt = `
-You are WILD, a creative reframer lane in a deterministic multi-agent runtime.
+You are AI3, a creative reframe lane in a deterministic multi-agent runtime.
 
 Return ONLY valid JSON with this shape:
 {
-  "agent":"WILD",
+  "agent":"AI3",
   "type":"REFRAME",
-  "claims":[{"id":"w0","text":"...","risk":"low","dependsOn":[]}],
-  "steps":[{"id":"w_s1","action":"...","pre":[],"post":[],"evidenceNeeded":[]}],
+  "claims":[{"id":"c1","text":"...","risk":"low","dependsOn":[]}],
+  "steps":[{"id":"s1","action":"...","pre":[],"post":[],"evidenceNeeded":[]}],
   "assumptions":[{"id":"a1","text":"...","isVerified":false}],
   "artifacts":[{"kind":"note","content":"..."}]
 }
@@ -106,19 +93,14 @@ Return ONLY valid JSON with this shape:
 Rules:
 - dependsOn MUST be an array (use [] if none)
 - artifacts[].content MUST be a string
-- Make the reframe about the user's objective, not UI.
+- Make the reframe about the user's objective, not UI
 
-Objective: ${task.objective}
-Constraints: ${JSON.stringify(task.constraints)}
-Notes: ${String((task as any)?.inputs?.notes ?? "")}
+OBJECTIVE: ${task.objective}
+CONSTRAINTS: ${JSON.stringify(task.constraints)}
+NOTES: ${String((task as any)?.inputs?.notes ?? "")}
 `.trim();
 
-  const raw = await openaiText({
-    model,
-    input: prompt,
-    temperature: 0.7,
-    max_output_tokens: 1400,
-  });
+  const raw = await modelText(spec, prompt);
 
   const jsonText = extractJson(raw);
 
@@ -126,7 +108,7 @@ Notes: ${String((task as any)?.inputs?.notes ?? "")}
   try {
     parsed = JSON.parse(jsonText);
   } catch {
-    throw new Error(`WILD returned non-JSON. Raw:\n${raw}`);
+    throw new Error(`AI3 returned non-JSON. Raw:\n${raw}`);
   }
 
   return normalizeAgentOutput(parsed);

@@ -1,13 +1,13 @@
-// ai_team/src/runtime/agents/xoB.ts
-import type { AgentOutput } from "../types.js";
-import { openaiJson } from "../model/openai.js";
+// ai_team/src/runtime/agents/AI2.ts
+import type { AgentOutput, ModelSpec } from "../types.js";
+import { modelJson } from "../model/dispatch.js";
 
 const AGENT_OUTPUT_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
   required: ["agent", "type", "claims", "steps", "assumptions", "artifacts"],
   properties: {
-    agent: { type: "string", enum: ["XO-A", "XO-B", "WILD"] },
+    agent: { type: "string", enum: ["AI1", "AI2", "AI3", "AI4"] },
     type: { type: "string", enum: ["PLAN", "CRITIQUE", "REFRAME", "REVISION"] },
 
     claims: {
@@ -15,7 +15,6 @@ const AGENT_OUTPUT_JSON_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        // ✅ strict schema: must include every property key
         required: ["id", "text", "dependsOn", "risk"],
         properties: {
           id: { type: "string" },
@@ -71,7 +70,7 @@ const AGENT_OUTPUT_JSON_SCHEMA = {
   }
 } as const;
 
-function normalize(out: AgentOutput, agent: "XO-B", type: AgentOutput["type"]): AgentOutput {
+function normalize(out: AgentOutput, agent: "AI2", type: AgentOutput["type"]): AgentOutput {
   out.agent = agent;
   out.type = type;
 
@@ -79,7 +78,7 @@ function normalize(out: AgentOutput, agent: "XO-B", type: AgentOutput["type"]): 
     out.claims = out.claims.map((c: any) => ({
       id: String(c?.id ?? ""),
       text: String(c?.text ?? ""),
-      risk: (c?.risk === "low" || c?.risk === "med" || c?.risk === "high") ? c.risk : "med",
+      risk: c?.risk === "low" || c?.risk === "med" || c?.risk === "high" ? c.risk : "med",
       dependsOn: Array.isArray(c?.dependsOn) ? c.dependsOn.map(String) : []
     }));
   } else {
@@ -112,33 +111,26 @@ function safeStringify(x: unknown): string {
   }
 }
 
-export async function xoB_critique(xoA: AgentOutput): Promise<AgentOutput> {
+export async function AI2_critique(prior: AgentOutput, spec: ModelSpec): Promise<AgentOutput> {
   const input =
-    `ROLE: XO-B\n` +
+    `ROLE: AI Team lane AI2\n` +
     `MODE: critique\n` +
     `OUTPUT: JSON only. Must match schema strictly.\n\n` +
-    `XO-A OUTPUT:\n${safeStringify(xoA)}\n\n` +
+    `PRIOR OUTPUT (JSON):\n${safeStringify(prior)}\n\n` +
     `REQUIREMENTS:\n` +
     `- Identify missing steps, mismatches to objective, and unsafe assumptions.\n` +
     `- Provide actionable corrections.\n` +
     `- claims[].dependsOn must always be present (empty array allowed).\n`;
 
-  const out = await openaiJson<AgentOutput>({
-    model: "gpt-4o-mini",
-    input,
-    schemaName: "xoB_critique",
-    jsonSchema: AGENT_OUTPUT_JSON_SCHEMA,
-    temperature: 0.2,
-    max_output_tokens: 1600
-  });
-
-  return normalize(out, "XO-B", "CRITIQUE");
+  const out = await modelJson<AgentOutput>(spec, input, "AI2_critique", AGENT_OUTPUT_JSON_SCHEMA);
+  return normalize(out, "AI2", "CRITIQUE");
 }
 
-export async function xoB_confirm(validatorPass: boolean): Promise<AgentOutput> {
+export async function AI2_confirm(validatorPass: boolean, _spec: ModelSpec): Promise<AgentOutput> {
+  // Confirm is deterministic and does not require a model call.
   return normalize(
     {
-      agent: "XO-B",
+      agent: "AI2",
       type: "CRITIQUE",
       claims: [
         {
@@ -159,7 +151,7 @@ export async function xoB_confirm(validatorPass: boolean): Promise<AgentOutput> 
         }
       ]
     } as any,
-    "XO-B",
+    "AI2",
     "CRITIQUE"
   );
 }
