@@ -2,13 +2,13 @@
 import { openaiText } from "../runtime/model/openai.js";
 import type { OpenAIModelRequest } from "../runtime/model/openai.js";
 
-export type XOCall = OpenAIModelRequest;
+export type ModelCall = OpenAIModelRequest;
 
-export type XOResult = {
+export type ModelResult = {
   outputText: string;
 };
 
-export async function callXO(req: XOCall): Promise<XOResult> {
+export async function callModel(req: ModelCall): Promise<ModelResult> {
   const outputText = await openaiText(req);
   return { outputText };
 }

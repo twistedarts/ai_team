@@ -59,7 +59,7 @@ export default function App() {
           />
         </div>
 
-        <div>{selected ? <RunView runId={selected} /> : <div className="card">(select a run)</div>}</div>
+        <div>{selected ? <RunView runId={selected} onRedirect={(newRunId) => { setSelected(newRunId); refresh(); }} /> : <div className="card">(select a run)</div>}</div>
       </div>
     </div>
   );

@@ -26,7 +26,7 @@ export function buildConsensus(ws: Workspace): ConsensusReport {
 
   const validatorStatus: ValidationStatus = ws.validator?.status ?? "FAIL";
 
-  // XO-B critique defines objections (best effort)
+  // AI2 critique defines objections (best effort)
   const AI2 = ws.outputs.find((o) => o.agent === "AI2");
   const dissent: { agent: any; issue: string; severity: ClaimRisk }[] = [];
 

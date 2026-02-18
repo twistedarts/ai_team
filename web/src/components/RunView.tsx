@@ -64,7 +64,7 @@ function parseUpdatedAt(trace: any): number | null {
   return Number.isFinite(t) ? t : null;
 }
 
-export default function RunView({ runId }: { runId: string }) {
+export default function RunView({ runId, onRedirect }: { runId: string; onRedirect?: (newRunId: string) => void }) {
   const [trace, setTrace] = useState<any>(null);
   const [pending, setPending] = useState<PendingEnvelope | null>(null);
   const [busy, setBusy] = useState(false);
@@ -226,7 +226,11 @@ export default function RunView({ runId }: { runId: string }) {
     setBusy(true);
     setErr(null);
     try {
-      await commitDecision(runId, decision, redirectObjective.trim());
+      const result = await commitDecision(runId, decision, redirectObjective.trim());
+      if (decision === "redirect" && result?.redirectedToRunId) {
+        onRedirect?.(result.redirectedToRunId);
+        return;
+      }
       await refreshPendingOnce();
       await refreshTraceOnce();
     } catch (e: any) {
@@ -337,14 +341,14 @@ export default function RunView({ runId }: { runId: string }) {
               className="btn secondary"
               disabled={busy || !redirectObjective.trim()}
               onClick={() => void doCommit("redirect")}
-              title="Redirect requires a new objective"
+              title="Revision requires a new objective"
             >
-              Redirect
+              Revise
             </button>
           </div>
 
           <div style={{ height: 10 }} />
-          <div className="small">Redirect objective</div>
+          <div className="small">Revision objective</div>
           <input
             className="input"
             value={redirectObjective}

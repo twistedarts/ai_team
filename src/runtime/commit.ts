@@ -29,49 +29,44 @@ function nowIso() {
 }
 
 /**
- * Called by Orchestrator when the run reaches the commit gate.
- * Registers a pending commit immediately, then blocks until a human decision arrives.
+ * Commit gate registration MUST be keyed by the actual runId (task.taskId),
+ * not by report.taskId (which can drift / be unset depending on consensus builder).
  */
 export async function awaitHumanCommit(
+  runId: string,
   report: ConsensusReport,
   proposal: CommitProposal
 ): Promise<{ decision: Decision; redirectObjective?: string }> {
-  const runId = String(report.taskId);
+  const key = String(runId);
+  if (!key || key === "undefined" || key === "null") {
+    throw new Error(`Commit gate requires a valid runId. Got: ${String(runId)}`);
+  }
 
-  // Register pending gate immediately (so UI can render)
   const createdAt = nowIso();
-  pendingByRunId.set(runId, { runId, createdAt, report, proposal });
+  pendingByRunId.set(key, { runId: key, createdAt, report, proposal });
 
-  // If we already have a waiter, don't create duplicates
-  if (waiterByRunId.has(runId)) {
-    // This should not happen in a clean run, but keep it safe.
-    // Replace pending, keep existing waiter.
+  // One waiter per runId
+  if (waiterByRunId.has(key)) {
     return new Promise((resolve) => {
-      const w = waiterByRunId.get(runId)!;
-      const originalResolve = w.resolve;
+      const w = waiterByRunId.get(key)!;
+      const prev = w.resolve;
       w.resolve = (d) => {
-        originalResolve(d);
+        prev(d);
         resolve(d);
       };
     });
   }
 
   return new Promise((resolve) => {
-    waiterByRunId.set(runId, { resolve, createdAt });
+    waiterByRunId.set(key, { resolve, createdAt });
   });
 }
 
-/**
- * Server polls this to decide whether to show the commit gate UI.
- */
 export function getPendingCommit(runId: string): PendingCommit | null {
   const key = String(runId);
   return pendingByRunId.get(key) ?? null;
 }
 
-/**
- * Called by the API commit endpoint. Returns false if nothing pending.
- */
 export function resolveHumanCommit(
   runId: string,
   decision: Decision,
@@ -83,7 +78,6 @@ export function resolveHumanCommit(
 
   if (!w || !p) return false;
 
-  // Clear pending before resolving (prevents double-commit)
   waiterByRunId.delete(key);
   pendingByRunId.delete(key);
 
