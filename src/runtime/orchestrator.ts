@@ -161,26 +161,34 @@ export class Orchestrator {
     const specAI3 = laneToSpec("AI3", pickLane(task, "AI3"));
     const specAI4 = laneToSpec("AI4", pickLane(task, "AI4"));
 
-    // 1) AI1 plan
+    const hasLane = (agent: AgentName) => pickLane(task, agent) !== null;
+
+    // 1) AI1 plan (required)
     const o1 = await AI1_plan(task, specAI1);
     addAgentOutput(ws, o1);
     emit("running", { stage: "AI1_plan" });
 
     // 2) AI2 critique
-    const o2 = await AI2_critique(o1, specAI2);
-    addAgentOutput(ws, o2);
-    emit("running", { stage: "AI2_critique" });
+    if (hasLane("AI2")) {
+      const o2 = await AI2_critique(o1, specAI2);
+      addAgentOutput(ws, o2);
+      emit("running", { stage: "AI2_critique" });
+    }
 
     // 3) AI3 reframe
-    const o3 = await AI3_reframe(task, specAI3);
-    addAgentOutput(ws, o3);
-    emit("running", { stage: "AI3_reframe" });
+    if (hasLane("AI3")) {
+      const o3 = await AI3_reframe(task, specAI3);
+      addAgentOutput(ws, o3);
+      emit("running", { stage: "AI3_reframe" });
+    }
 
-    // 4) AI4 reframe (provider may be gemini today; spec supports others later)
-    const ai4fn = resolveAI4Callable();
-    const o4 = await ai4fn(task, specAI4);
-    addAgentOutput(ws, o4);
-    emit("running", { stage: "AI4_reframe" });
+    // 4) AI4 reframe
+    if (hasLane("AI4")) {
+      const ai4fn = resolveAI4Callable();
+      const o4 = await ai4fn(task, specAI4);
+      addAgentOutput(ws, o4);
+      emit("running", { stage: "AI4_reframe" });
+    }
 
     // 5) AI1 revision
     const revisionNote = `Integrated critique + reframes into a bounded, deterministic plan.`;
@@ -194,9 +202,11 @@ export class Orchestrator {
     emit("running", { stage: "validator" });
 
     // 7) AI2 confirm
-    const o6 = await AI2_confirm(vr.status === "PASS", specAI2);
-    addAgentOutput(ws, o6);
-    emit("running", { stage: "AI2_confirm" });
+    if (hasLane("AI2")) {
+      const o6 = await AI2_confirm(vr.status === "PASS", specAI2);
+      addAgentOutput(ws, o6);
+      emit("running", { stage: "AI2_confirm" });
+    }
 
     // 8) Consensus report
     const report = buildConsensus(ws);

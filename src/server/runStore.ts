@@ -104,3 +104,31 @@ export function listRuns(): RunIndexItem[] {
     })
     .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
 }
+
+const STALE_MS = 5 * 60 * 1000; // 5 minutes
+
+export function clearStaleRuns(): number {
+  const files = readdirSync(RUN_DIR).filter((f) => f.endsWith(".json"));
+  let cleared = 0;
+  const now = Date.now();
+
+  for (const f of files) {
+    const runId = f.replace(/\.json$/, "");
+    try {
+      const t: any = loadTrace(runId);
+      if (t?.status === "running") {
+        const updated = Date.parse(t?.updatedAt ?? "");
+        if (!Number.isFinite(updated) || now - updated > STALE_MS) {
+          t.status = "failed";
+          t.error = "Marked as failed (stale)";
+          t.updatedAt = nowIso();
+          writeFileSync(fp(runId), JSON.stringify(t, null, 2), "utf-8");
+          cleared++;
+        }
+      }
+    } catch {
+      // skip bad files
+    }
+  }
+  return cleared;
+}

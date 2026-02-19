@@ -114,18 +114,25 @@ function normalize(out: AgentOutput, agent: "AI1", type: AgentOutput["type"]): A
 }
 
 export async function AI1_plan(task: TaskInput, spec: ModelSpec): Promise<AgentOutput> {
+  const notes = (task.inputs as any)?.notes ?? "";
+  const priorContext = notes
+    ? `PRIOR CONTEXT (from previous run):\n${notes}\n\n` +
+      `IMPORTANT: The above is the output from a prior committee run. Build upon it, do not discard it.\n\n`
+    : "";
+
   const input =
     `ROLE: AI Team lane AI1\n` +
     `MODE: deterministic planner\n` +
     `OUTPUT: JSON only. Must match schema strictly.\n\n` +
     `OBJECTIVE:\n${task.objective}\n\n` +
+    priorContext +
     `CONSTRAINTS:\n${safeStringify(task.constraints)}\n\n` +
-    `INPUTS:\n${safeStringify(task.inputs)}\n\n` +
     `REQUIREMENTS:\n` +
     `- Provide a concrete plan that satisfies the objective.\n` +
     `- Include at least one artifact {kind:"note"} with a human-readable summary.\n` +
     `- claims[].dependsOn must always be present (empty array allowed).\n` +
-    `- steps[].action must be complete sentences (do not truncate).\n`;
+    `- steps[].action must be complete sentences (do not truncate).\n` +
+    (notes ? `- Incorporate and refine the prior context. Do not start from scratch.\n` : "");
 
   const out = await modelJson<AgentOutput>(spec, input, "AI1_plan", AGENT_OUTPUT_JSON_SCHEMA);
   return normalize(out, "AI1", "PLAN");

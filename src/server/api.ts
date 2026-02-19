@@ -3,7 +3,7 @@ import "dotenv/config";
 import express, { Request, Response } from "express";
 import cors from "cors";
 
-import { saveTrace, listRuns, loadTrace, traceMeta } from "./runStore.js";
+import { saveTrace, listRuns, loadTrace, traceMeta, clearStaleRuns } from "./runStore.js";
 
 import { Orchestrator } from "../runtime/orchestrator.js";
 import { CommandValidator } from "../runtime/validator/commandValidator.js";
@@ -129,6 +129,7 @@ type CreateRunBody = {
   objective?: string;
   constraints?: Record<string, unknown>;
   runtime?: IncomingRuntime;
+  notes?: string;
 };
 
 /**
@@ -158,7 +159,7 @@ app.post("/api/runs", (req: Request, res: Response) => {
     constraints: mergedConstraints,
     inputs: {
       files: [],
-      notes: "",
+      notes: String(body.notes ?? "").trim(),
       runtime: {
         lanes,
       },
@@ -238,6 +239,7 @@ app.post("/api/runs/:id/commit", async (req: Request, res: Response) => {
       mustBeDeterministic: true,
       maxIterations: 2,
     };
+    let priorNotes = "";
 
     try {
       const t: any = loadTrace(runId);
@@ -245,6 +247,19 @@ app.post("/api/runs/:id/commit", async (req: Request, res: Response) => {
       if (Array.isArray(lanes)) inheritedLanes = lanes;
       const c = t?.task?.constraints;
       if (c && typeof c === "object") inheritedConstraints = { ...inheritedConstraints, ...c };
+
+      // Build prior context from the run's proposed output
+      const proposedOutput = t?.report?.proposedOutput ?? "";
+      const priorRevisionHistory = (t?.task?.inputs?.notes ?? "").includes("=== REVISION HISTORY ===")
+        ? (t.task.inputs.notes as string).split("=== PRIOR COMMITTEE OUTPUT ===")[0].trim()
+        : "";
+      const originalObjective = (t?.task?.objective ?? "").split("\n\nRevision:")[0].trim();
+
+      const parts: string[] = [];
+      if (proposedOutput) parts.push(`=== PRIOR COMMITTEE OUTPUT ===\n${proposedOutput}`);
+      if (priorRevisionHistory) parts.push(priorRevisionHistory);
+      parts.push(`=== REVISION HISTORY ===\nOriginal objective: ${originalObjective}\nRevision: ${redirectObjective}`);
+      priorNotes = parts.join("\n\n");
     } catch {
       // ignore
     }
@@ -256,7 +271,7 @@ app.post("/api/runs/:id/commit", async (req: Request, res: Response) => {
       constraints: inheritedConstraints,
       inputs: {
         files: [],
-        notes: `(redirected from ${runId})`,
+        notes: priorNotes || `(redirected from ${runId})`,
         runtime: { lanes: inheritedLanes },
       },
     };
@@ -300,6 +315,11 @@ app.post("/api/runs/:id/commit", async (req: Request, res: Response) => {
     committed: true,
     decision,
   });
+});
+
+app.post("/api/runs/clear-stale", (_req, res) => {
+  const cleared = clearStaleRuns();
+  res.json({ cleared });
 });
 
 const port = Number(process.env.PORT ?? 3001);

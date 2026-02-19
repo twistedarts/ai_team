@@ -3,7 +3,7 @@ import type { ModelSpec } from "../types.js";
 
 import { openaiText, openaiJson } from "./openai.js";
 import { geminiText, geminiJson } from "./gemini.js";
-import { anthropicText } from "./anthropic.js";
+import { anthropicText, anthropicJson } from "./anthropic.js";
 import { azureOpenAIText, azureOpenAIJson } from "./azure_openai.js";
 
 export async function modelText(spec: ModelSpec, input: string): Promise<string> {
@@ -28,6 +28,6 @@ export async function modelJson<T>(spec: ModelSpec, input: string, schemaName: s
     case "azure_openai":
       return azureOpenAIJson<T>({ model: spec.model, input, schemaName, jsonSchema, temperature: spec.temperature, max_output_tokens: spec.max_output_tokens });
     case "anthropic":
-      throw new Error("anthropicJson not implemented (start with text; add structured output later).");
+      return anthropicJson<T>({ model: spec.model, input, schemaName, jsonSchema, temperature: spec.temperature, max_output_tokens: spec.max_output_tokens });
   }
 }

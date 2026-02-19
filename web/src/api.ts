@@ -3,9 +3,12 @@
 export type RunStatus = "running" | "done" | "failed" | "unknown";
 export type Decision = "approve" | "reject" | "redirect";
 
+
 export type CommitDecisionResponse =
   | { runId: string; committed: boolean; decision: "approve" | "reject"; reason?: string }
   | { runId: string; committed: boolean; decision: "redirect"; redirectedToRunId?: string; reason?: string };
+
+
 
 export type RunIndexItem = {
   runId: string;
@@ -71,15 +74,11 @@ export async function loadRunTrace(runId: string): Promise<any | null> {
   }
 }
 
-export async function commitDecision(
-  runId: string,
-  decision: Decision,
-  redirectObjective?: string
-): Promise<CommitDecisionResponse> {
+export async function commitDecision(runId: string, decision: Decision, redirectObjective?: string) {
   const body: any = { decision };
   if (decision === "redirect") body.redirectObjective = redirectObjective ?? "";
 
-  return j<CommitDecisionResponse>(`/api/runs/${encodeURIComponent(runId)}/commit`, {
+  return j<any>(`/api/runs/${encodeURIComponent(runId)}/commit`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -89,3 +88,9 @@ export async function commitDecision(
 export function runEventsUrl(runId: string) {
   return `/api/runs/${encodeURIComponent(runId)}/events`;
 }
+
+export const clearStaleRuns = () =>
+  j<{ cleared: number }>(`/api/runs/clear-stale`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });

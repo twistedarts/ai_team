@@ -1,6 +1,6 @@
 // ai_team/web/src/components/RunView.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { commitDecision, getPending, loadRunTrace, type Decision, type PendingEnvelope } from "../api";
+import { clearStaleRuns, commitDecision, createRun, getPending, loadRunTrace, type Decision, type PendingEnvelope } from "../api";
 import JsonPanel from "./JsonPanel";
 
 const TRACE_POLL_MS = 900;
@@ -64,12 +64,13 @@ function parseUpdatedAt(trace: any): number | null {
   return Number.isFinite(t) ? t : null;
 }
 
-export default function RunView({ runId, onRedirect }: { runId: string; onRedirect?: (newRunId: string) => void }) {
+export default function RunView({ runId, onRedirect, onRerun }: { runId: string; onRedirect?: (newRunId: string) => void; onRerun?: (newRunId: string) => void }) {
   const [trace, setTrace] = useState<any>(null);
   const [pending, setPending] = useState<PendingEnvelope | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [redirectObjective, setRedirectObjective] = useState("");
+  const [rerunNote, setRerunNote] = useState("");
 
   const [autoFollow, setAutoFollow] = useState(true);
   const [showCommitGate, setShowCommitGate] = useState(true);
@@ -227,8 +228,8 @@ export default function RunView({ runId, onRedirect }: { runId: string; onRedire
     setErr(null);
     try {
       const result = await commitDecision(runId, decision, redirectObjective.trim());
-      if (decision === "redirect" && result?.redirectedToRunId) {
-        onRedirect?.(result.redirectedToRunId);
+      if (decision === "redirect" && (result as any)?.redirectedToRunId) {
+        onRedirect?.((result as any).redirectedToRunId);
         return;
       }
       await refreshPendingOnce();
@@ -240,43 +241,108 @@ export default function RunView({ runId, onRedirect }: { runId: string; onRedire
     }
   }
 
+  async function doRerun() {
+    if (!rerunNote.trim() || !trace?.task) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      // Extract the original objective (strip any prior revision stacking)
+      const fullObjective = trace.task.objective ?? "";
+      const originalObjective = fullObjective.split("\n\nRevision:")[0].trim();
+
+      // Collect all revision notes (prior ones + this new one)
+      const priorRevisions = fullObjective.includes("\n\nRevision:")
+        ? fullObjective.substring(fullObjective.indexOf("\n\nRevision:"))
+        : "";
+      const allRevisions = `${priorRevisions}\n\nRevision: ${rerunNote.trim()}`;
+
+      // Build the prior output context from this run's final output
+      const priorOutput = finalText || proposedText || "";
+
+      // Assemble notes: prior committee output + revision history
+      const notes = [
+        priorOutput ? `=== PRIOR COMMITTEE OUTPUT ===\n${priorOutput}` : "",
+        (trace.task.inputs?.notes ?? "").includes("=== REVISION HISTORY ===")
+          ? (trace.task.inputs.notes as string).split("=== PRIOR COMMITTEE OUTPUT ===")[0].trim()
+          : "",
+        `=== REVISION HISTORY ===${allRevisions}`,
+      ].filter(Boolean).join("\n\n");
+
+      // Inherit lanes from the original run
+      const lanes = trace.task.inputs?.runtime?.lanes ?? [];
+
+      const payload = {
+        objective: `${originalObjective}${allRevisions}`,
+        constraints: trace.task.constraints,
+        runtime: { lanes },
+        notes,
+      };
+
+      const res = await createRun(payload);
+      console.log("[doRerun] createRun response:", res);
+      if (res?.runId) {
+        console.log("[doRerun] calling onRerun with:", res.runId);
+        onRerun?.(res.runId);
+        setRerunNote("");
+      } else {
+        console.warn("[doRerun] no runId in response:", res);
+      }
+    } catch (e: any) {
+      setErr(e?.message ?? String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Unified status label
+  const displayStatus = (() => {
+    if (isRunningFresh) return "running";
+    if (isRunningStale) return "stale";
+    if (canCommit && !committed) return "awaiting commit";
+    if (approved) return "approved";
+    if (committed) return rawStatus;
+    return rawStatus;
+  })();
+
+  async function doClearStale() {
+    setBusy(true);
+    try {
+      await clearStaleRuns();
+      await refreshTraceOnce();
+    } catch (e: any) {
+      setErr(e?.message ?? String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div className="card">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-          <div>
-            <h2>Run</h2>
-            <div className="small">{runId}</div>
-            <div className="small">
-              {updatedAtMs ? `updated: ${new Date(updatedAtMs).toLocaleString()}` : "updated: (unknown)"}
-            </div>
+        <h2>Job Status</h2>
+        {trace?.task?.objective ? (
+          <div style={{ fontSize: 14, color: "#cbd3e6", marginBottom: 8, lineHeight: 1.4 }}>{trace.task.objective}</div>
+        ) : (
+          <div className="small" style={{ marginBottom: 8 }}>(no objective)</div>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div className="small">
+            {runId} · {updatedAtMs ? new Date(updatedAtMs).toLocaleString() : "(unknown)"}
           </div>
-
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn secondary" onClick={() => void refreshTraceOnce()} disabled={busy}>
-              Refresh trace
-            </button>
-            <button className="btn secondary" onClick={() => void refreshPendingOnce()} disabled={busy}>
-              Refresh pending
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span className="badge">
+              {displayStatus}
+              {isRunningFresh ? <span className="spinner" /> : null}
+            </span>
+            <label className="small" style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <input type="checkbox" checked={autoFollow} onChange={(e) => setAutoFollow(e.target.checked)} />
+              Auto-follow
+            </label>
+            <button className="btn secondary smallBtn" onClick={doClearStale} disabled={busy} title="Mark stale running jobs as failed">
+              Clear stale
             </button>
           </div>
-        </div>
-
-        <div className="hr" />
-
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <span className="badge">
-            status: {rawStatus}
-            {isRunningFresh ? <span className="spinner" /> : null}
-            {isRunningStale ? <span style={{ marginLeft: 8, opacity: 0.85 }}>(stale)</span> : null}
-          </span>
-          <span className="badge">gate: {gateStatus}</span>
-          <span className="badge">outputs: {outputs.length}</span>
-
-          <label className="small" style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-            <input type="checkbox" checked={autoFollow} onChange={(e) => setAutoFollow(e.target.checked)} />
-            Auto-follow
-          </label>
         </div>
 
         {err && (
@@ -291,14 +357,37 @@ export default function RunView({ runId, onRedirect }: { runId: string; onRedire
 
       {approved && finalText ? (
         <details className="card" open={finalOpen} onToggle={(e) => setFinalOpen((e.target as HTMLDetailsElement).open)}>
-          <summary className="small" style={{ cursor: "pointer" }}>
+          <summary style={{ cursor: "pointer", fontSize: 14, fontWeight: 600, letterSpacing: "0.2px", color: "#cbd3e6" }}>
             Final output (approved)
           </summary>
           <div style={{ height: 10 }} />
-          <div className="small" style={{ whiteSpace: "pre-wrap" }}>
+          <div style={{ whiteSpace: "pre-wrap", color: "#b0bbd0" }}>
             {finalText}
           </div>
         </details>
+      ) : null}
+
+      {isTerminal && committed ? (
+        <div className="card">
+          <h3>Rerun with revision</h3>
+          <div className="small" style={{ marginBottom: 8 }}>
+            Revisit this job with additional direction. Inherits the same agent configuration.
+          </div>
+          <input
+            className="input"
+            value={rerunNote}
+            onChange={(e) => setRerunNote(e.target.value)}
+            placeholder='e.g. "Include CJIS compliance requirements and chain of custody for evidence transfers"'
+          />
+          <div style={{ height: 8 }} />
+          <button
+            className="btn"
+            disabled={busy || !rerunNote.trim()}
+            onClick={() => void doRerun()}
+          >
+            {busy ? "Starting…" : "Rerun"}
+          </button>
+        </div>
       ) : null}
 
       {showCommitGate && canCommit && !committed ? (
@@ -323,7 +412,7 @@ export default function RunView({ runId, onRedirect }: { runId: string; onRedire
               padding: 10,
             }}
           >
-            <div className="small" style={{ whiteSpace: "pre-wrap" }}>
+            <div style={{ whiteSpace: "pre-wrap", color: "#b0bbd0" }}>
               {proposedText || "(no proposal yet)"}
             </div>
           </div>
@@ -341,7 +430,7 @@ export default function RunView({ runId, onRedirect }: { runId: string; onRedire
               className="btn secondary"
               disabled={busy || !redirectObjective.trim()}
               onClick={() => void doCommit("redirect")}
-              title="Revision requires a new objective"
+              title="Revise requires a new objective"
             >
               Revise
             </button>
@@ -359,7 +448,7 @@ export default function RunView({ runId, onRedirect }: { runId: string; onRedire
       ) : null}
 
       <details className="card" open>
-        <summary className="small" style={{ cursor: "pointer" }}>
+        <summary style={{ cursor: "pointer", fontSize: 14, fontWeight: 600, letterSpacing: "0.2px", color: "#cbd3e6" }}>
           Agent timeline
         </summary>
         <div style={{ height: 12 }} />
@@ -408,7 +497,7 @@ export default function RunView({ runId, onRedirect }: { runId: string; onRedire
       </details>
 
       <details className="card">
-        <summary className="small" style={{ cursor: "pointer" }}>
+        <summary style={{ cursor: "pointer", fontSize: 14, fontWeight: 600, letterSpacing: "0.2px", color: "#cbd3e6" }}>
           Dev panels (raw JSON)
         </summary>
         <div style={{ height: 12 }} />

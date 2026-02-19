@@ -42,3 +42,26 @@ export async function anthropicText(req: AnthropicModelRequest): Promise<string>
 
   return String(text ?? "").trim();
 }
+
+export async function anthropicJson<T>(req: AnthropicModelRequest & { schemaName: string; jsonSchema: any }): Promise<T> {
+  const prompt =
+    `Return ONLY valid JSON matching this schema name: ${req.schemaName}.\n` +
+    `Do not wrap in markdown fences. Do not include any text before or after the JSON.\n\n` +
+    `JSON SCHEMA:\n${JSON.stringify(req.jsonSchema, null, 2)}\n\n` +
+    `INPUT:\n${req.input}\n`;
+
+  const raw = await anthropicText({
+    model: req.model,
+    input: prompt,
+    temperature: req.temperature ?? 0.2,
+    max_output_tokens: req.max_output_tokens ?? 2000,
+  });
+
+  const trimmed = raw.trim().replace(/^```[a-zA-Z]*\n?/, "").replace(/```$/, "").trim();
+
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {
+    throw new Error(`Anthropic JSON parse failed. Raw:\n${raw}`);
+  }
+}

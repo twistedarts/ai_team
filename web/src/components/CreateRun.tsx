@@ -1,9 +1,8 @@
 // ai_team/web/src/components/CreateRun.tsx
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import { createRun } from "../api";
 
 type Provider = "openai" | "gemini" | "azure_openai" | "anthropic";
-type LaneRole = "PLAN" | "CRITIQUE" | "REFRAME" | "REVISION" | "CONFIRM";
 
 type ModelSpec = {
   provider: Provider;
@@ -15,29 +14,37 @@ type ModelSpec = {
 type LaneConfig = {
   enabled: boolean;
   id: "AI1" | "AI2" | "AI3" | "AI4";
-  role: LaneRole;
+  label: string;
   spec: ModelSpec;
+};
+
+const PROVIDER_CATALOG: Record<Provider, string> = {
+  openai: "OpenAI",
+  gemini: "Gemini",
+  azure_openai: "Azure OpenAI",
+  anthropic: "Anthropic",
 };
 
 const MODEL_CATALOG: Record<Provider, string[]> = {
   openai: ["gpt-4o", "gpt-4o-mini", "gpt-5.2", "gpt-5.2-thinking"],
   gemini: ["gemini-2.5-flash"],
   azure_openai: [
-    // In Azure this is typically the DEPLOYMENT name, not the base model name.
-    // Put your deployment names here (examples):
     "gpt-4o-deploy",
     "gpt-4o-mini-deploy",
   ],
   anthropic: [
-    // Examples; adjust to what you actually enable.
-    "claude-3-5-sonnet-latest",
-    "claude-3-5-haiku-latest",
+    "claude-sonnet-4-5-20250929",
+    "claude-haiku-4-5-20251001",
   ],
 };
 
-function firstModel(provider: Provider): string {
-  return MODEL_CATALOG[provider][0] ?? "";
-}
+// Role-appropriate defaults for temp and tokens
+const LANE_DEFAULTS: Record<string, { temp: number; tokens: number }> = {
+  AI1: { temp: 0.2, tokens: 1800 },   // Planner — structured, deterministic
+  AI2: { temp: 0.2, tokens: 1200 },   // Critic — precise, analytical
+  AI3: { temp: 0.7, tokens: 900 },    // Reframer — creative, divergent
+  AI4: { temp: 0.75, tokens: 900 },   // Reframer — creative, divergent
+};
 
 export default function CreateRun({ onCreated }: { onCreated: (runId: string) => void }) {
   const [objective, setObjective] = useState("");
@@ -45,16 +52,11 @@ export default function CreateRun({ onCreated }: { onCreated: (runId: string) =>
   const [err, setErr] = useState<string | null>(null);
 
   const [lanes, setLanes] = useState<LaneConfig[]>([
-    { enabled: true, id: "AI1", role: "PLAN", spec: { provider: "openai", model: "gpt-5.2" } },
-    { enabled: true, id: "AI2", role: "CRITIQUE", spec: { provider: "openai", model: "gpt-4o" } },
-    { enabled: true, id: "AI3", role: "REFRAME", spec: { provider: "openai", model: "gpt-4o-mini" } },
-    { enabled: true, id: "AI4", role: "REFRAME", spec: { provider: "gemini", model: "gemini-2.5-flash" } },
+    { enabled: true, id: "AI1", label: "Planner", spec: { provider: "" as Provider, model: "", temperature: 0.2, max_output_tokens: 1800 } },
+    { enabled: true, id: "AI2", label: "Critic", spec: { provider: "" as Provider, model: "", temperature: 0.2, max_output_tokens: 1200 } },
+    { enabled: true, id: "AI3", label: "Reframer", spec: { provider: "" as Provider, model: "", temperature: 0.7, max_output_tokens: 900 } },
+    { enabled: true, id: "AI4", label: "Reframer", spec: { provider: "" as Provider, model: "", temperature: 0.75, max_output_tokens: 900 } },
   ]);
-
-  const providerOptions: Provider[] = useMemo(
-    () => ["openai", "gemini", "azure_openai", "anthropic"],
-    []
-  );
 
   function updateLane(i: number, patch: Partial<LaneConfig>) {
     setLanes((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -72,12 +74,19 @@ export default function CreateRun({ onCreated }: { onCreated: (runId: string) =>
     setErr(null);
 
     try {
+      const ROLE_MAP: Record<string, string> = {
+        AI1: "PLAN",
+        AI2: "CRITIQUE",
+        AI3: "REFRAME",
+        AI4: "REFRAME",
+      };
+
       const enabledLanes = lanes
-        .filter((l) => l.enabled)
+        .filter((l) => l.enabled && l.spec.provider && l.spec.model)
         .map((l) => ({
           id: l.id,
           enabled: true,
-          role: l.role,
+          role: ROLE_MAP[l.id] ?? "REFRAME",
           spec: {
             provider: l.spec.provider,
             model: l.spec.model,
@@ -122,53 +131,38 @@ export default function CreateRun({ onCreated }: { onCreated: (runId: string) =>
       <div className="hr" />
 
       <h3>Agents</h3>
-      <div className="small" style={{ marginBottom: 10 }}>
-        Enable lanes, select provider + model, and set each lane’s role. No lane is tied to a provider.
-      </div>
 
       <div className="list">
         {lanes.map((lane, i) => {
           const models = MODEL_CATALOG[lane.spec.provider] ?? [];
+          const defaults = LANE_DEFAULTS[lane.id] ?? { temp: 0.5, tokens: 1000 };
           return (
             <div key={lane.id} className="item" style={{ cursor: "default" }}>
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "28px 70px 1fr 1fr 1fr",
+                  gridTemplateColumns: "90px 1fr 1fr",
                   gap: 8,
                   alignItems: "center",
                 }}
               >
-                <input
-                  type="checkbox"
-                  checked={lane.enabled}
-                  onChange={(e) => updateLane(i, { enabled: e.target.checked })}
-                />
-                <div style={{ fontWeight: 600 }}>{lane.id}</div>
-
-                <select
-                  className="select"
-                  value={lane.role}
-                  onChange={(e) => updateLane(i, { role: e.target.value as LaneRole })}
-                >
-                  <option value="PLAN">PLAN</option>
-                  <option value="CRITIQUE">CRITIQUE</option>
-                  <option value="REFRAME">REFRAME</option>
-                  <option value="REVISION">REVISION</option>
-                  <option value="CONFIRM">CONFIRM</option>
-                </select>
+                <div>
+                  <div style={{ fontWeight: 600 }}>{lane.id}</div>
+                  <div className="small">{lane.label}</div>
+                </div>
 
                 <select
                   className="select"
                   value={lane.spec.provider}
                   onChange={(e) => {
                     const provider = e.target.value as Provider;
-                    updateLaneSpec(i, { provider, model: firstModel(provider) });
+                    updateLaneSpec(i, { provider, model: "" });
                   }}
                 >
-                  {providerOptions.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
+                  <option value="">Provider</option>
+                  {Object.entries(PROVIDER_CATALOG).map(([key, label]) => (
+                    <option key={key} value={key}>
+                      {label}
                     </option>
                   ))}
                 </select>
@@ -179,26 +173,22 @@ export default function CreateRun({ onCreated }: { onCreated: (runId: string) =>
                   onChange={(e) => updateLaneSpec(i, { model: e.target.value })}
                   disabled={models.length === 0}
                 >
-                  {models.length === 0 ? (
-                    <option value="">(no models configured)</option>
-                  ) : (
-                    models.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))
-                  )}
+                  <option value="">Model</option>
+                  {models.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
                 </select>
               </div>
 
-              <div style={{ height: 8 }} />
+              <div style={{ height: 6 }} />
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                <label className="small" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 12, alignItems: "center", paddingLeft: 0 }}>
+                <label className="small" style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   temp
                   <input
-                    className="input"
-                    style={{ width: 110 }}
+                    className="input-narrow"
                     type="number"
                     step="0.05"
                     min="0"
@@ -209,15 +199,14 @@ export default function CreateRun({ onCreated }: { onCreated: (runId: string) =>
                         temperature: e.target.value === "" ? undefined : Number(e.target.value),
                       })
                     }
-                    placeholder="(default)"
+                    placeholder={String(defaults.temp)}
                   />
                 </label>
 
-                <label className="small" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <label className="small" style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   max tokens
                   <input
-                    className="input"
-                    style={{ width: 140 }}
+                    className="input-narrow"
                     type="number"
                     step="50"
                     min="1"
@@ -227,7 +216,7 @@ export default function CreateRun({ onCreated }: { onCreated: (runId: string) =>
                         max_output_tokens: e.target.value === "" ? undefined : Number(e.target.value),
                       })
                     }
-                    placeholder="(default)"
+                    placeholder={String(defaults.tokens)}
                   />
                 </label>
               </div>
