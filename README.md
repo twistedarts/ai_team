@@ -6,13 +6,13 @@ AI Team is a committee-based AI orchestration system where multiple AI agents �
 
 The human is always in the loop. The pipeline is deterministic. The order matters.
 
-Deterministic control flow
+* Deterministic control flow
 
-Deterministic policy evaluation
+* Deterministic policy evaluation
 
-Deterministic validation + consensus construction
+* Deterministic validation + consensus construction
 
-Stochastic content generation allowed only inside typed envelopes
+* Stochastic content generation allowed only inside typed envelopes
 
 ---
 
@@ -55,7 +55,7 @@ User Objective
      │
      ▼
 ┌──────────┐
-│  Validator│  Checks structural integrity of the output.
+│ Validator│  Checks structural integrity of the output.
 │          │  PASS or FAIL. No negotiation.
 └────┬─────┘
      │
@@ -67,8 +67,8 @@ User Objective
      │
      ▼
 ┌──────────┐
-│  Consensus│  Builds the proposed output from all agent outputs.
-│  Builder  │  Assembles the commit gate package.
+│ Consensus│  Builds the proposed output from all agent outputs.
+│ Builder  │  Assembles the commit gate package.
 └────┬─────┘
      │
      ▼
