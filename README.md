@@ -307,9 +307,3 @@ The pipeline enforces:
 ## License
 
 Proprietary. All rights reserved.
-
----
-
-## Related
-
-- **Project Substrate** — The foundational deterministic governance runtime. Implements layered enforcement (PIL, Policy, Evidence, Verification, EGK) at the architectural level. The philosophy behind all governance.
