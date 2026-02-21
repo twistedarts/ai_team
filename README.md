@@ -6,6 +6,14 @@ AI Team is a committee-based AI orchestration system where multiple AI agents â€
 
 The human is always in the loop. The pipeline is deterministic. The order matters.
 
+Deterministic control flow
+
+Deterministic policy evaluation
+
+Deterministic validation + consensus construction
+
+Stochastic content generation allowed only inside typed envelopes
+
 ---
 
 ## How It Works
