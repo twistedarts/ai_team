@@ -1,188 +1,315 @@
 # AI Team
 
-A deterministic, multi-agent "committee" runtime for structured reasoning with a **Human Commit Gate**.
+**A Multi-Agent Deterministic Runtime Orchestration Loop**
 
-AI Team runs a fixed-order orchestration loop (AI1 plan → AI2 critique → AI3 reframe → AI4 reframe → AI1 revision → validation → commit gate) and produces a **trace** with human-readable proposed output + final output on approval.
+AI Team is a committee-based AI orchestration system where multiple AI agents — each with a distinct role — deliberate on a problem through a deterministic pipeline. No agent acts alone. Every output passes through critique, reframing, revision, validation, and a human commit gate before it ships.
 
-Includes a web console with:
-- Live agent timeline (SSE, auto-follow)
-- Commit gate with human-readable proposed output
-- Final output shown only after approval
-- Raw JSON panels hidden behind dev toggles
+The human is always in the loop. The pipeline is deterministic. The order matters.
 
 ---
 
-## What it is
+## How It Works
 
-**AI Team** is a deterministic runtime and console for "agent deliberation":
-- Agents produce structured outputs (claims, steps, artifacts)
-- A validator can PASS/FAIL artifacts (currently code-validator stubs are supported)
-- A commit gate presents a **synopsis** so the operator can approve/reject/redirect
-- Runs are stored and replayable
+AI Team runs four agent lanes through a fixed pipeline:
 
-Design goals:
-- Deterministic orchestration (fixed ordering)
-- Human commit before any side-effecting action
-- Human-readable outputs by default; JSON only for logs/dev
-
----
-
-## Architecture
-
-### Runtime
-- `src/runtime/orchestrator.ts` — fixed-order agent pipeline
-- `src/runtime/workspace.ts` — workspace state + run lifecycle
-- `src/runtime/agents/*` — agent implementations (AI1, AI2, AI3, AI4)
-- `src/runtime/model/openai.ts` — OpenAI adapter
-- `src/runtime/model/gemini.ts` — Gemini adapter
-- `src/runtime/model/anthropic.ts` — Anthropic adapter
-- `src/runtime/consensus.ts` — builds commit gate proposal + consensus report
-- `src/runtime/commit.ts` — commit gate logic + human decision recording
-- `src/runtime/validator/*` — validator stubs (expandable)
-
-### Roles
-- **AI1** — Planner + Reviser: produces the initial plan and integrates feedback into a revised output
-- **AI2** — Critic + Confirmer: critiques the plan and confirms after validation
-- **AI3** — Reframer: provides alternative perspectives (OpenAI lane)
-- **AI4** — Reframer: provides alternative perspectives (Gemini lane)
-
-### Pipeline
 ```
-AI1 plan → AI2 critique → AI3 reframe → AI4 reframe → AI1 revision → validate → AI2 confirm → consensus → commit gate
+User Objective
+  │
+  ▼
+┌──────────┐
+│  AI1     │  PLANNER — Produces a structured plan with claims,
+│          │  steps, assumptions, and evidence requirements.
+└────┬─────┘
+     │
+     ▼
+┌──────────┐
+│  AI2     │  CRITIC — Evaluates the plan. Identifies risks,
+│          │  gaps, unverified assumptions, and missing steps.
+└────┬─────┘
+     │
+     ▼
+┌──────────┐
+│  AI3     │  REFRAMER — Offers alternative perspectives.
+│          │  Challenges assumptions from a different angle.
+└────┬─────┘
+     │
+     ▼
+┌──────────┐
+│  AI4     │  REFRAMER — Second independent reframe.
+│          │  Different provider, different creative temperature.
+└────┬─────┘
+     │
+     ▼
+┌──────────┐
+│  AI1     │  REVISION — Integrates critique + reframes into a
+│          │  bounded, deterministic final plan.
+└────┬─────┘
+     │
+     ▼
+┌──────────┐
+│  Validator│  Checks structural integrity of the output.
+│          │  PASS or FAIL. No negotiation.
+└────┬─────┘
+     │
+     ▼
+┌──────────┐
+│  AI2     │  CONFIRM — Deterministic check. If validator passed,
+│          │  recommends proceeding to human commit.
+└────┬─────┘
+     │
+     ▼
+┌──────────┐
+│  Consensus│  Builds the proposed output from all agent outputs.
+│  Builder  │  Assembles the commit gate package.
+└────┬─────┘
+     │
+     ▼
+┌──────────────────────────────────────────┐
+│  HUMAN COMMIT GATE                       │
+│                                          │
+│  The human reviews the proposed output   │
+│  and decides:                            │
+│                                          │
+│  ✅ Approve — Accept and commit          │
+│  ❌ Reject  — Discard                    │
+│  🔄 Revise  — Send back with new         │
+│              direction (inherits config) │
+└──────────────────────────────────────────┘
 ```
 
-### API
-- `src/server/api.ts` — Express API for runs, traces, pending commit, commit decision
-- Uses SSE for live updates:
-  - `GET /api/runs/:runId/events` (EventSource)
+### Key Design Decisions
 
-### Web console
-- `web/` — Vite + React console
-- Live run updates via SSE
-- Agent timeline auto-follows as new outputs arrive
-- Commit gate + final output UX
+- **Any model can fill any role.** Providers and models are selected per-lane at runtime. Mix OpenAI, Anthropic, Google, and Azure in a single committee.
+- **Lanes are conditional.** Leave a lane unconfigured and it's skipped. Run a 2-agent committee or a 4-agent committee — the pipeline adapts.
+- **Revision carries full context.** Rerun a completed job with additional direction and the new committee receives the prior output, all revision notes, and the original objective. Nothing is lost.
+- **The human commit gate is a first-class architectural element.** It's not a feature bolted on. Nothing executes, nothing ships, nothing is final without explicit human approval.
 
 ---
 
-## Requirements
+## Supported Providers
 
-- Node.js (recommended LTS)
-- An OpenAI API key (for AI1, AI2, AI3 lanes)
-- A Google/Gemini API key (for AI4 lane)
+| Provider | Config Key | Models |
+|----------|-----------|--------|
+| **OpenAI** | `openai` | gpt-5.2-thinking, gpt-5.2, gpt-4o, gpt-4o-mini |
+| **Anthropic** | `anthropic` | claude-sonnet-4-5-20250929, claude-haiku-4-5-20251001 |
+| **Google Gemini** | `gemini` | gemini-2.5-flash, gemini-2.5-pro |
+| **Azure OpenAI** | `azure_openai` | (uses deployment names) |
+
+Adding a new provider requires one adapter file in `src/runtime/model/` and one entry in the dispatch switch.
 
 ---
 
-## Environment (.env)
+## Project Structure
 
-Create a `.env` at repo root:
+```
+ai_team_public/
+├── src/
+│   ├── runtime/
+│   │   ├── orchestrator.ts   # Pipeline execution — fixed agent order
+│   │   ├── consensus.ts      # Builds proposed output from all agents
+│   │   ├── commit.ts         # Human commit gate (pending/resolve)
+│   │   ├── workspace.ts      # Workspace state management
+│   │   ├── validator/        # Output validation (PASS/FAIL)
+│   │   ├── types.ts          # Core types, Zod schemas
+│   │   ├── agents/
+│   │   │   ├── AI1.ts        # Planner + Revision
+│   │   │   ├── AI2.ts        # Critic + Confirm
+│   │   │   ├── AI3.ts        # Reframer
+│   │   │   └── AI4.ts        # Reframer (independent)
+│   │   └── model/
+│   │       ├── dispatch.ts   # Routes providers to adapters
+│   │       ├── openai.ts     # OpenAI adapter (text + JSON)
+│   │       ├── anthropic.ts  # Anthropic adapter (text + JSON)
+│   │       ├── gemini.ts     # Gemini adapter (text + JSON)
+│   │       └── azure_openai.ts # Azure OpenAI adapter (text + JSON)
+│   └── server/
+│       ├── api.ts            # Express API — runs, commits, SSE, clear stale
+│       └── runStore.ts       # File-based run persistence + status tracking
+├── web/src/
+│   ├── App.tsx               # Main layout — left panel + right panel
+│   ├── api.ts                # Frontend API client
+│   ├── styles.css            # Dark theme styles
+│   └── components/
+│       ├── CreateRun.tsx      # Objective + lane configuration UI
+│       ├── RunList.tsx        # Run list with auto-polling
+│       ├── RunView.tsx        # Job status, timeline, commit gate, rerun
+│       └── JsonPanel.tsx      # Dev panel for raw trace/pending JSON
+├── logs/runs/                 # Persisted run traces (JSON)
+├── package.json
+└── tsconfig.json
+```
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- TypeScript 5.3+
+- At least one provider API key
+
+### Install
 
 ```bash
-OPENAI_API_KEY=your_openai_key
-GOOGLE_API_KEY=your_google_key   # or GEMINI_API_KEY depending on adapter
-GEMINI_API_KEY=your_gemini_key   # if you use this name instead
-```
-
-Notes:
-- Gemini adapter accepts GOOGLE_API_KEY or GEMINI_API_KEY (either works).
-- Keep .env out of git.
-
----
-
-## Install
-
-From repo root:
-
-```bash
+cd ai_team_public
 npm install
+cd web && npm install && cd ..
 ```
 
-If the web console is a separate package under web/:
+### Configure
 
-```bash
-cd web
-npm install
-cd ..
+Create a `.env` file in the project root:
+
+```env
+# Required: at least one provider
+OPENAI_API_KEY=sk-...
+
+# Optional: additional providers
+ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_API_KEY=AI...
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/v1
 ```
 
-## Build
+### Build
 
 ```bash
+# Build backend (src/ → dist/)
 npm run build
+
+# Build frontend (web/src/ → web/dist/)
+cd web && npm run build && cd ..
 ```
 
-If web/ has its own build:
+**Important:** The API server runs from `dist/`, not `src/`. Always rebuild after editing source files.
+
+### Run
 
 ```bash
-cd web
-npm run build
+# Start the API server (serves both API and web UI)
+npm start
 ```
 
-## Run
+Open `http://localhost:3001` in your browser.
 
-Start the API/runtime:
+---
 
-```bash
-npm run api
+## Usage
+
+### Creating a Run
+
+1. Enter an objective in the text field
+2. Configure each lane — select provider and model from the dropdowns
+3. Temperature and max tokens are pre-populated with role-appropriate defaults:
+   - AI1 (Planner): 0.2 temp / 4096 tokens — structured, deterministic
+   - AI2 (Critic): 0.2 temp / 1200 tokens — precise, analytical
+   - AI3 (Reframer): 0.7 temp / 900 tokens — creative, divergent
+   - AI4 (Reframer): 0.75 temp / 900 tokens — creative, divergent
+4. Leave a lane's provider/model blank to skip it
+5. Click **Submit**
+
+### Reviewing Output
+
+The Job Status panel shows:
+- The objective at full width
+- Run ID and timestamp on one line
+- Unified status badge: `running` | `stale` | `awaiting commit` | `approved` | `done` | `failed`
+
+The Agent Timeline shows each agent's output in execution order — notes, steps, claims, and assumptions.
+
+### Commit Gate
+
+When the pipeline completes and validates, the commit gate appears:
+- **Approve** — Accept the proposed output
+- **Reject** — Discard
+- **Revise** — Enter a new objective; the system creates a new run inheriting the same lane configuration and carrying the prior output as context
+
+### Rerun with Revision
+
+After approving a job, the "Rerun with revision" section appears. Enter additional direction and the system:
+- Preserves the original objective
+- Carries the prior committee output as context
+- Accumulates all revision notes in order
+- Fires a new run with the same agent configuration
+
+The committee builds on its previous work. Nothing is lost across revisions.
+
+### Managing Runs
+
+- The Runs panel auto-refreshes every 3 seconds
+- **Clear stale** marks any run stuck in "running" for 5+ minutes as failed
+- Click any run in the list to view its full trace
+
+---
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/runs` | List all runs (sorted by most recent) |
+| `POST` | `/api/runs` | Create a new run |
+| `GET` | `/api/runs/:id` | Get run trace |
+| `GET` | `/api/runs/:id/events` | SSE stream for live updates |
+| `GET` | `/api/runs/:id/pending` | Get pending commit gate status |
+| `POST` | `/api/runs/:id/commit` | Submit commit decision (approve/reject/redirect) |
+| `POST` | `/api/runs/clear-stale` | Mark stale running jobs as failed |
+
+---
+
+## Agent Output Schema
+
+Every agent produces a structured output:
+
+```typescript
+{
+  agent: "AI1",           // AI1 | AI2 | AI3 | AI4
+  type: "PLAN",           // PLAN | CRITIQUE | REFRAME | REVISION
+  claims: [{
+    id: string,
+    text: string,
+    risk: "low" | "med" | "high",
+    dependsOn: string[]
+  }],
+  steps: [{
+    id: string,
+    action: string,       // Complete sentence — never truncated
+    pre: string[],        // Preconditions
+    post: string[],       // Postconditions
+    evidenceNeeded: string[]
+  }],
+  assumptions: [{
+    id: string,
+    text: string,
+    isVerified: boolean
+  }],
+  artifacts: [{
+    kind: "note",
+    content: string       // Human-readable summary
+  }]
+}
 ```
 
-This exposes:
-- `GET /api/health`
-- Run endpoints under `/api/runs/*`
-
-Start the web console from web/:
-
-```bash
-npm run dev
-```
-
-Open the Vite URL shown in the terminal. The web console proxies `/api/*` to the backend.
-
 ---
 
-## Using the console
+## Design Philosophy
 
-1. Create a run with an objective (task)
-2. Watch live deliberation in the timeline (SSE)
-3. When READY_FOR_COMMIT appears:
-   - Review proposed output
-   - Approve / Reject / Redirect
-4. On approval:
-   - "Final output" panel opens
-   - Commit gate collapses
+AI Team exists because agentic frameworks are being built without governance. Tool calling, handoffs, message passing — plumbing without traffic laws. AI Team provides the deterministic loop, the commit gate, and the consensus builder.
 
----
-
-## Agent lanes & model selection
-
-Each agent lane can be mapped to a provider and model:
-- **OpenAI**: e.g. gpt-4o-mini, gpt-4o
-- **Gemini**: e.g. gemini-2.5-flash (free tier)
-- **Anthropic**: (adapter present, expansion planned)
-
----
-
-## Trace format
-
-Each run stores:
-- `task` — objective + constraints + runtime selections
-- `outputs[]` — agent outputs
-- `validator` — validation result
-- `report` — consensus + proposed output
-- `trace.humanDecision` — recorded once committed
-
----
-
-## Roadmap (near term)
-
-- Agent + model selection UI (per lane)
-- Role-based configuration (decouple roles from agent IDs)
-- Runs list: pagination / finite cap
-- Collapsible sections (timeline, dev panels, etc.)
-- Rich artifacts viewer (cards instead of raw JSON)
-- Run diff (compare two traces)
+The pipeline enforces:
+- **Order matters.** Plan → Critique → Reframe → Revise → Validate → Commit. Not negotiable.
+- **The model doesn't decide.** The pipeline decides what's legal. The model fills in the content.
+- **Humans commit.** No output is final without explicit human approval.
+- **Abstention is valid.** If the committee can't produce a quality answer, it says so.
 
 ---
 
 ## License
 
-TBD
+Proprietary. All rights reserved.
+
+---
+
+## Related
+
+- **Project Substrate** — The foundational deterministic governance runtime. Implements layered enforcement (PIL, Policy, Evidence, Verification, EGK) at the architectural level. The philosophy behind all governance.
