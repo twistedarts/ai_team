@@ -6,14 +6,6 @@ AI Team is a committee-based AI orchestration system where multiple AI agents �
 
 The human is always in the loop. The pipeline is deterministic. The order matters.
 
-* Deterministic control flow
-
-* Deterministic policy evaluation
-
-* Deterministic validation + consensus construction
-
-* Stochastic content generation allowed only inside typed envelopes
-
 ---
 
 ## How It Works
@@ -305,10 +297,15 @@ Every agent produces a structured output:
 AI Team exists because agentic frameworks are being built without governance. Tool calling, handoffs, message passing — plumbing without traffic laws. AI Team provides the deterministic loop, the commit gate, and the consensus builder.
 
 The pipeline enforces:
-- **Order matters.** Plan → Critique → Reframe → Revise → Validate → Commit. Not negotiable.
-- **The model doesn't decide.** The pipeline decides what's legal. The model fills in the content.
-- **Humans commit.** No output is final without explicit human approval.
-- **Abstention is valid.** If the committee can't produce a quality answer, it says so.
+- * Order matters.** Plan → Critique → Reframe → Revise → Validate → Commit. Not negotiable.
+- * The model doesn't decide.** The pipeline decides what's legal. The model fills in the content.
+- * Humans commit.** No output is final without explicit human approval.
+- * Abstention is valid.** If the committee can't produce a quality answer, it says so.
+- * Deterministic control flow
+- * Deterministic policy evaluation
+- * Deterministic validation + consensus construction
+- * Stochastic content generation allowed only inside typed envelopes
+
 
 ---
 
