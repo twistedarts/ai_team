@@ -1,8 +1,11 @@
-# AI Team
+## AI Team
+ ![AI Team Logo](./ai-teamLogo.jpg)  **A Multi-Agent Deterministic Runtime Orchestration Loop**
+ 
+AI Team is a committee-based AI orchestration system where multiple AI agents — each with a distinct role — deliberate on a problem 
+through a deterministic pipeline. No agent acts alone. Every output passes through critique, reframing, revision, validation, and a human commit gate before it ships.
 
-**A Multi-Agent Deterministic Runtime Orchestration Loop**
 
-AI Team is a committee-based AI orchestration system where multiple AI agents — each with a distinct role — deliberate on a problem through a deterministic pipeline. No agent acts alone. Every output passes through critique, reframing, revision, validation, and a human commit gate before it ships.
+
 
 The human is always in the loop. The pipeline is deterministic. The order matters.
 
