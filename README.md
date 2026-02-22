@@ -143,6 +143,7 @@ ai_team_public/
 ```
 
 ---
+![AI Team UI](./AI-Team_UI.jpg) 
 
 ## Getting Started
 
