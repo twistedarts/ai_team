@@ -1,5 +1,6 @@
+ ![AI Team Logo](./AI-Team-Bkgrnd.jpg)  
 ## AI Team
- ![AI Team Logo](./AI-Team-Logo.jpg)  **A Multi-Agent Orchestration Runtime**
+**A Multi-Agent Orchestration Runtime**
  
 AI Team is a committee-based AI orchestration system where multiple AI agents — each with a distinct role — deliberate on a problem 
 through a deterministic pipeline. No agent acts alone. Every output passes through critique, reframing, revision, validation, and a human commit gate before it ships.
