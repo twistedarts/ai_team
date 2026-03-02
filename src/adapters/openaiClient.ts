@@ -1,4 +1,4 @@
-// ai_team/src/adapters/openaiClient.ts
+
 import { openaiText } from "../runtime/model/openai.js";
 import type { OpenAIModelRequest } from "../runtime/model/openai.js";
 
