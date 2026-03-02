@@ -34,7 +34,7 @@ export class CommandValidator implements Validator {
     }
 
     if (commands.length === 0) {
-      // PASS with no checks is allowed (you can tighten later)
+      // PASS with no checks is allowed (you can tighten this later)
       return {
         validator: "CODE_VALIDATOR",
         status: "PASS",
@@ -73,4 +73,5 @@ export class CommandValidator implements Validator {
     };
   }
 }
+
 
