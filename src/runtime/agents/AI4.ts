@@ -1,4 +1,4 @@
-// ai_team/src/runtime/agents/AI4.ts
+
 import type { AgentOutput, TaskInput, ModelSpec } from "../types.js";
 import { modelText } from "../model/dispatch.js";
 
