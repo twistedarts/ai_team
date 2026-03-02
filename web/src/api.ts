@@ -1,4 +1,3 @@
-// ai_team/web/src/api.ts
 
 export type RunStatus = "running" | "done" | "failed" | "unknown";
 export type Decision = "approve" | "reject" | "redirect";
