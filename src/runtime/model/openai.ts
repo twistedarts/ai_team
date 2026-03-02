@@ -1,4 +1,4 @@
-// ai_team/src/runtime/model/openai.ts
+
 import "dotenv/config";
 
 export type OpenAIModelRequest = {
@@ -70,7 +70,7 @@ export async function openaiText(req: OpenAIModelRequest): Promise<string> {
   return extractOutputText(data).trim();
 }
 
-// Optional (safe to keep even if not used yet)
+// Optional 
 export async function openaiJson<T>(req: OpenAIJsonRequest): Promise<T> {
   const payload = {
     model: req.model,
