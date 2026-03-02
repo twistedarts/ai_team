@@ -10,7 +10,7 @@ export default function App() {
     <div className="container">
       <div style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 18, fontWeight: 800 }}>AI Team Console</div>
-        <div className="small">A Multi-Agent Deterministic Runtime Orchestration Loop</div>
+        <div className="small">A Multi-Agent Orchestration Runtime Loop</div>
       </div>
 
       <div className="row">
