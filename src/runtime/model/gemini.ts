@@ -1,4 +1,4 @@
-// ai_team/src/runtime/model/gemini.ts
+
 import "dotenv/config";
 
 export type GeminiModelRequest = {
