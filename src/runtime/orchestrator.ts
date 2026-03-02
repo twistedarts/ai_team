@@ -1,4 +1,4 @@
-// ai_team/src/runtime/orchestrator.ts
+
 import {
   TaskInput,
   TaskInputSchema,
@@ -13,14 +13,12 @@ import { AI1_plan, AI1_revision } from "./agents/AI1.js";
 import { AI2_critique, AI2_confirm } from "./agents/AI2.js";
 import { AI3_reframe } from "./agents/AI3.js";
 
-// AI4 export name has drifted in your repo; do NOT named-import it.
-// We’ll resolve the callable at runtime.
+
 import * as AI4 from "./agents/AI4.js";
 
 import { buildConsensus } from "./consensus.js";
 import { Validator } from "./validator/index.js";
 
-// commit signature may differ depending on your last edits; call via any to avoid arity break.
 import { awaitHumanCommit, type CommitProposal } from "./commit.js";
 
 // incremental persistence for SSE/live UI
@@ -60,7 +58,6 @@ function pickLane(task: TaskInput, agent: AgentName): Lane | null {
 }
 
 function defaultSpecFor(agent: AgentName): ModelSpec {
-  // sensible defaults (only used if UI didn't provide lanes)
   if (agent === "AI4") {
     return { provider: "gemini", model: "gemini-2.5-flash", temperature: 0.75, max_output_tokens: 900 } as any;
   }
@@ -107,7 +104,6 @@ function extractProposal(ws: Workspace, maxSteps = 5): CommitProposal {
 }
 
 function resolveAI4Callable(): (task: TaskInput, spec: ModelSpec) => Promise<any> {
-  // Accept any of these export names; your repo drifted.
   const cands = [
     (AI4 as any).AI4_reframe,
     (AI4 as any).gemini_reframe,
