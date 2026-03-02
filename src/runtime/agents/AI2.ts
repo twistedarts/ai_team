@@ -1,4 +1,4 @@
-// ai_team/src/runtime/agents/AI2.ts
+
 import type { AgentOutput, ModelSpec } from "../types.js";
 import { modelJson } from "../model/dispatch.js";
 
