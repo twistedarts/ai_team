@@ -1,4 +1,4 @@
-// ai_team/src/runtime/consensus.ts
+
 import type { Workspace, AgentOutput, ConsensusReport, RuntimeStatus, ValidationStatus } from "./types.js";
 
 function findLast<T>(arr: T[], pred: (x: T) => boolean): T | undefined {
@@ -85,3 +85,4 @@ export function buildConsensus(ws: Workspace): ConsensusReport {
     ],
   };
 }
+
