@@ -1,4 +1,4 @@
-// ai_team/web/src/components/RunView.tsx
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { clearStaleRuns, commitDecision, createRun, getPending, loadRunTrace, type Decision, type PendingEnvelope } from "../api";
 import JsonPanel from "./JsonPanel";
