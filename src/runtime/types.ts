@@ -1,4 +1,4 @@
-// ai_team/src/runtime/types.ts
+
 import { z } from "zod";
 
 export type UUID = string;
@@ -114,7 +114,7 @@ export interface Artifact {
 }
 
 export type AgentName = LaneId; // keep compatibility for now inside runtime code (public name only)
-export type AgentType = Exclude<LaneRole, "CONFIRM">; // outputs don't need CONFIRM unless you already emit it
+export type AgentType = Exclude<LaneRole, "CONFIRM">; 
 
 export interface AgentOutput {
   agent: AgentName;
@@ -167,3 +167,4 @@ export interface Workspace {
 
   trace: Record<string, unknown>;
 }
+
