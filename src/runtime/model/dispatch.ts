@@ -1,4 +1,4 @@
-//src/runtime/model/dispatch.ts
+
 import type { ModelSpec } from "../types.js";
 
 import { openaiText, openaiJson } from "./openai.js";
