@@ -1,4 +1,4 @@
-// ai_team/src/runtime/agents/AI3.ts
+
 import type { TaskInput, AgentOutput, ModelSpec } from "../types.js";
 import { modelText } from "../model/dispatch.js";
 
