@@ -1,4 +1,4 @@
-// ai_team/src/runtime/commit.ts
+
 import type { ConsensusReport } from "./types.js";
 
 export type Decision = "approve" | "reject" | "redirect";
