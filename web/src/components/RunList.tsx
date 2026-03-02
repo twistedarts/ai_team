@@ -63,7 +63,7 @@ export default function RunList({ onSelect }: { onSelect: (runId: string) => voi
 
   function selectRun(runId: string) {
     setSelected(runId);
-    // Keep routing consistent with the rest of your UI behavior.
+    // Keep routing consistent with UI behavior.
     const nextHash = `#${runId}`;
     if (window.location.hash !== nextHash) window.location.hash = nextHash;
     onSelect(runId);
