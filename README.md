@@ -193,10 +193,11 @@ cd web && npm run build && cd ..
 
 ```bash
 # Start the API server (serves both API and web UI)
-npm start
+First term: npm rin build, node dist/server/api.js 
+Second term: npm run dev, for vite
 ```
 
-Open `http://localhost:3001` in your browser.
+Open `http://localhost:5173` in your browser.
 
 ---
 
