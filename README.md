@@ -193,10 +193,13 @@ cd web && npm run build && cd ..
 
 ```bash
 # Start the API server (serves both API and web UI)
-npm start
+npm run build
+node dist/server/api.js
+second term: npm run dev
 ```
 
-Open `http://localhost:3001` in your browser.
+Open `http://localhost:5173` in your browser.
+poert 3001 is for the api.
 
 ---
 
