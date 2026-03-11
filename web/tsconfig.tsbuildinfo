@@ -1,1 +1,1 @@
-{"root":["./src/App.tsx","./src/api.ts","./src/main.tsx","./src/components/CreateRun.tsx","./src/components/JsonPanel.tsx","./src/components/RunList.tsx","./src/components/RunView.tsx"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/api.ts","./src/main.tsx","./src/components/createrun.tsx","./src/components/jsonpanel.tsx","./src/components/runlist.tsx","./src/components/runview.tsx"],"version":"5.9.3"}
