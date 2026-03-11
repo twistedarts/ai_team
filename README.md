@@ -183,6 +183,7 @@ AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/v1
 # Build backend (src/ → dist/)
 npm run build
 
+
 # Build frontend (web/src/ → web/dist/)
 cd web && npm run build && cd ..
 ```
@@ -191,13 +192,13 @@ cd web && npm run build && cd ..
 
 ### Run
 
-
+```bash
 # Start the API server (serves both API and web UI)
 npm run build
 node dist/server/api.js
 second term: npm run dev
-
-Open http://localhost:5173 in your browser. poert 3001 is for the api.
+```
+Open http://localhost:5173 in your browser. port 3001 is for the api.
 
 ---
 
